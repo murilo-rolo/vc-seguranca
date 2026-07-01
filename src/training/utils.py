@@ -8,7 +8,7 @@ para evitar duplicação entre scripts de treinamento.
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, Sampler
 from pathlib import Path
 from tqdm import tqdm
 from typing import Tuple, Optional, Callable
@@ -115,6 +115,7 @@ def create_dataloader(
     shuffle: bool = False,
     num_workers: int = 4,
     pin_memory: Optional[bool] = None,
+    sampler: Optional[Sampler] = None,
 ) -> DataLoader:
     """Cria um DataLoader com configurações padronizadas."""
     if pin_memory is None:
@@ -123,7 +124,8 @@ def create_dataloader(
     return DataLoader(
         dataset,
         batch_size=batch_size,
-        shuffle=shuffle,
+        shuffle=shuffle if sampler is None else False,
+        sampler=sampler,
         num_workers=num_workers,
         pin_memory=pin_memory,
     )

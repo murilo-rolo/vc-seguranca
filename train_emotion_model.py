@@ -9,7 +9,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, WeightedRandomSampler
 from torchvision import transforms
 from pathlib import Path
 from PIL import Image
@@ -308,6 +308,18 @@ def main():
     )
     
     parser.add_argument(
+        "--sampler",
+        action="store_true",
+        default=True,
+        help="Usar WeightedRandomSampler para balancear batches"
+    )
+    parser.add_argument(
+        "--no-sampler",
+        action="store_false",
+        dest="sampler",
+        help="Desabilitar WeightedRandomSampler"
+    )
+    parser.add_argument(
         "--resume",
         action="store_true",
         help="Retomar treino a partir do último best_model.pth"
@@ -357,9 +369,17 @@ def main():
     class_weights = torch.nan_to_num(class_weights, nan=1.0)
     
     # Criar DataLoaders
+    train_sampler = None
+    if args.sampler:
+        sample_weights = [1.0 / class_counts[label].item() for _, label in train_dataset.samples]
+        train_sampler = WeightedRandomSampler(
+            sample_weights, num_samples=len(sample_weights), replacement=True
+        )
+    
     train_loader = create_dataloader(
         train_dataset, batch_size=args.batch_size,
-        shuffle=True, num_workers=args.num_workers
+        shuffle=not args.sampler, sampler=train_sampler,
+        num_workers=args.num_workers
     )
     val_loader = create_dataloader(
         val_dataset, batch_size=args.batch_size,
@@ -395,16 +415,21 @@ def main():
     scaler = torch.cuda.amp.GradScaler(enabled=args.amp)
     
     # Loss e optimizer
+    # Sampler já balanceia os batches → desativar class_weights para evitar dupla ponderação
+    use_class_weights = args.class_weights and not args.sampler
+    if args.class_weights and args.sampler:
+        print("  ⚠️  Sampler ativo: class_weights desativados (redundância evitada)")
+    
     if args.focal_loss:
         if args.label_smoothing > 0:
             print("  ⚠️  Label smoothing desativado (Focal Loss ativa)")
         criterion = FocalLoss(
             gamma=args.focal_gamma,
-            alpha=class_weights.to(device) if args.class_weights else None
+            alpha=class_weights.to(device) if use_class_weights else None
         )
     else:
         criterion = nn.CrossEntropyLoss(
-            weight=class_weights.to(device) if args.class_weights else None,
+            weight=class_weights.to(device) if use_class_weights else None,
             label_smoothing=args.label_smoothing
         )
     
@@ -449,6 +474,8 @@ def main():
     print(f"Learning rate: {args.learning_rate}")
     print(f"Weight decay: {args.weight_decay}")
     print(f"Mixed precision: {'ON' if args.amp else 'OFF'}")
+
+    print(f"Sampler balanceado: {'ON' if args.sampler else 'OFF'}")
     print(f"Early stop patience: {args.early_stop_patience}")
     print(f"Min confidence: {args.min_confidence}")
     print(f"Classifier:           2-layer MLP (512→{args.classifier_hidden}→8)")
@@ -456,7 +483,7 @@ def main():
         print(f"Loss function:         Focal Loss (γ={args.focal_gamma})")
     else:
         print(f"Loss function:         CrossEntropy (label smoothing={args.label_smoothing})")
-    print(f"Class weights: {'ON' if args.class_weights else 'OFF'}")
+    print(f"Class weights: {'ON' if use_class_weights else 'OFF'}")
     if args.class_weights:
         class_names = list(AFFECTNET_CLASSES.keys())
         weights_str = ", ".join(f"{n}: {w:.3f}" for n, w in zip(class_names, class_weights))

@@ -1,7 +1,7 @@
 """
 Modelo de CNN para reconhecimento de emoções faciais (FER - Facial Expression Recognition).
 
-Arquitetura baseada em ResNet-18 pré-treinada no ImageNet, adaptada para classificação
+Arquitetura baseada em ResNet-34 pré-treinada no ImageNet, adaptada para classificação
 de emoções usando o dataset AffectNet.
 
 Classes de emoção (8 classes padrão):
@@ -20,9 +20,9 @@ import torch.nn as nn
 import torchvision.models as models
 from typing import Tuple, Optional
 
-# Tentar importar ResNet18_Weights (disponível em torchvision >= 0.13)
+# Tentar importar ResNet34_Weights (disponível em torchvision >= 0.13)
 try:
-    from torchvision.models import ResNet18_Weights
+    from torchvision.models import ResNet34_Weights
     HAS_WEIGHTS_API = True
 except ImportError:
     HAS_WEIGHTS_API = False
@@ -61,7 +61,7 @@ class EmotionNet(nn.Module):
         """
         Args:
             num_emotions: Número de classes de emoção (padrão: 8 para AffectNet)
-            pretrained: Se True, usa ResNet-18 pré-treinada no ImageNet
+            pretrained: Se True, usa ResNet-34 pré-treinada no ImageNet
             dropout: Taxa de dropout antes da camada final
             input_size: Tamanho de entrada (altura, largura) - padrão: (224, 224)
             classifier_hidden: Dimensão oculta do classifier 2-layer (default: 128)
@@ -71,17 +71,17 @@ class EmotionNet(nn.Module):
         self.num_emotions = num_emotions
         self.input_size = input_size
         
-        # Carregar ResNet-18 pré-treinada
+        # Carregar ResNet-34 pré-treinada
         if pretrained:
             if HAS_WEIGHTS_API:
-                resnet = models.resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
+                resnet = models.resnet34(weights=ResNet34_Weights.IMAGENET1K_V1)
             else:
-                resnet = models.resnet18(pretrained=True)
+                resnet = models.resnet34(pretrained=True)
         else:
             if HAS_WEIGHTS_API:
-                resnet = models.resnet18(weights=None)
+                resnet = models.resnet34(weights=None)
             else:
-                resnet = models.resnet18(pretrained=False)
+                resnet = models.resnet34(pretrained=False)
         
         self.backbone = nn.Sequential(*list(resnet.children())[:-1])
         self.feature_size = 512
@@ -173,7 +173,7 @@ def create_emotion_model(
     
     Args:
         num_emotions: Número de classes de emoção
-        pretrained: Se True, usa ResNet-18 pré-treinada
+        pretrained: Se True, usa ResNet-34 pré-treinada
         dropout: Taxa de dropout
         input_size: Tamanho de entrada
         classifier_hidden: Dimensão oculta do classifier 2-layer
