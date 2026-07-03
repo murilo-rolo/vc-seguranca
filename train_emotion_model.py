@@ -7,7 +7,6 @@ import csv
 import json
 import numpy as np
 import torch
-import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, WeightedRandomSampler
 from torchvision import transforms
@@ -261,38 +260,12 @@ def main():
     )
     
     parser.add_argument(
-        "--label_smoothing",
-        type=float,
-        default=0.05,
-        help="Label smoothing epsilon (0 = desativado)"
-    )
-    
-    parser.add_argument(
-        "--class_weights",
-        action="store_true",
-        default=True,
-        help="Usar pesos por classe no CrossEntropyLoss"
-    )
-    parser.add_argument(
-        "--no-class-weights",
-        action="store_false",
-        dest="class_weights",
-        help="Desabilitar pesos por classe"
-    )
-    
-    parser.add_argument(
         "--min_confidence",
         type=float,
         default=0.7,
         help="Confiança mínima do label no CSV (0.0 = usa todos, 0.7 recomendado)"
     )
     
-    parser.add_argument(
-        "--focal-loss",
-        action="store_true",
-        default=False,
-        help="Usar Focal Loss no lugar de CrossEntropyLoss"
-    )
     parser.add_argument(
         "--focal-gamma",
         type=float,
@@ -301,10 +274,10 @@ def main():
     )
     
     parser.add_argument(
-        "--classifier-hidden",
-        type=int,
-        default=128,
-        help="Dimensão oculta do classifier 2-layer (default: 128)"
+        "--grad-clip",
+        type=float,
+        default=1.0,
+        help="Gradient clipping max norm (0 = desativado, default: 1.0)"
     )
     
     parser.add_argument(
@@ -360,17 +333,12 @@ def main():
         min_confidence=args.min_confidence
     )
     
-    # Computar pesos por classe para lidar com desbalanceamento
-    class_counts = torch.zeros(len(AFFECTNET_CLASSES))
-    for _, label in train_dataset.samples:
-        class_counts[label] += 1
-    class_weights = class_counts.sum() / (len(AFFECTNET_CLASSES) * class_counts)
-    # Garantir que nenhum peso seja infinito (classe com 0 amostras)
-    class_weights = torch.nan_to_num(class_weights, nan=1.0)
-    
     # Criar DataLoaders
     train_sampler = None
     if args.sampler:
+        class_counts = torch.zeros(len(AFFECTNET_CLASSES))
+        for _, label in train_dataset.samples:
+            class_counts[label] += 1
         sample_weights = [1.0 / class_counts[label].item() for _, label in train_dataset.samples]
         train_sampler = WeightedRandomSampler(
             sample_weights, num_samples=len(sample_weights), replacement=True
@@ -395,8 +363,7 @@ def main():
     
     if args.resume and resume_checkpoint_path.exists():
         model, ckpt = create_emotion_model(
-            num_emotions=8, pretrained=True, dropout=0.5,
-            classifier_hidden=args.classifier_hidden,
+            num_emotions=8, pretrained=True,
             checkpoint_path=str(resume_checkpoint_path),
             resume_training=True, device=args.device
         )
@@ -405,8 +372,7 @@ def main():
         print(f"Retomando treino da época {ckpt['epoch']} (val_acc: {ckpt['val_acc']:.2f}%)")
     else:
         model = create_emotion_model(
-            num_emotions=8, pretrained=True, dropout=0.5,
-            classifier_hidden=args.classifier_hidden,
+            num_emotions=8, pretrained=True,
             device=args.device
         )
         best_val_acc = 0.0
@@ -414,24 +380,7 @@ def main():
     # Mixed precision
     scaler = torch.cuda.amp.GradScaler(enabled=args.amp)
     
-    # Loss e optimizer
-    # Sampler já balanceia os batches → desativar class_weights para evitar dupla ponderação
-    use_class_weights = args.class_weights and not args.sampler
-    if args.class_weights and args.sampler:
-        print("  ⚠️  Sampler ativo: class_weights desativados (redundância evitada)")
-    
-    if args.focal_loss:
-        if args.label_smoothing > 0:
-            print("  ⚠️  Label smoothing desativado (Focal Loss ativa)")
-        criterion = FocalLoss(
-            gamma=args.focal_gamma,
-            alpha=class_weights.to(device) if use_class_weights else None
-        )
-    else:
-        criterion = nn.CrossEntropyLoss(
-            weight=class_weights.to(device) if use_class_weights else None,
-            label_smoothing=args.label_smoothing
-        )
+    criterion = FocalLoss(gamma=args.focal_gamma)
     
     optimizer = optim.Adam(
         model.parameters(),
@@ -474,20 +423,12 @@ def main():
     print(f"Learning rate: {args.learning_rate}")
     print(f"Weight decay: {args.weight_decay}")
     print(f"Mixed precision: {'ON' if args.amp else 'OFF'}")
-
+    print(f"Gradient clip:   {'ON (max_norm=' + str(args.grad_clip) + ')' if args.grad_clip > 0 else 'OFF'}")
     print(f"Sampler balanceado: {'ON' if args.sampler else 'OFF'}")
     print(f"Early stop patience: {args.early_stop_patience}")
     print(f"Min confidence: {args.min_confidence}")
-    print(f"Classifier:           2-layer MLP (512→{args.classifier_hidden}→8)")
-    if args.focal_loss:
-        print(f"Loss function:         Focal Loss (γ={args.focal_gamma})")
-    else:
-        print(f"Loss function:         CrossEntropy (label smoothing={args.label_smoothing})")
-    print(f"Class weights: {'ON' if use_class_weights else 'OFF'}")
-    if args.class_weights:
-        class_names = list(AFFECTNET_CLASSES.keys())
-        weights_str = ", ".join(f"{n}: {w:.3f}" for n, w in zip(class_names, class_weights))
-        print(f"  Pesos: {weights_str}")
+    print(f"Classifier:           Linear(512→8)")
+    print(f"Loss function:         Focal Loss (γ={args.focal_gamma})")
     print(f"Resume: {'ON (época ' + str(ckpt['epoch']) + ')' if args.resume and ckpt is not None else 'OFF'}")
     print("=" * 60)
     print()
@@ -496,6 +437,7 @@ def main():
         train_loss, train_acc = run_epoch(
             model, train_loader, criterion, device,
             is_train=True, optimizer=optimizer, scaler=scaler,
+            grad_clip=args.grad_clip,
             desc=f"Epoch {epoch} [Train]"
         )
         val_loss, val_acc, val_metrics = run_epoch(

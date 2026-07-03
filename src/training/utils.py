@@ -25,6 +25,7 @@ def run_epoch(
     model_hook: Optional[Callable] = None,
     scaler: Optional[torch.cuda.amp.GradScaler] = None,
     return_metrics: bool = False,
+    grad_clip: Optional[float] = None,
 ):
     """
     Executa uma época de treino ou validação.
@@ -41,6 +42,7 @@ def run_epoch(
                     Recebe (batch) e retorna (inputs, labels).
         scaler: GradScaler para mixed precision (opcional)
         return_metrics: Se True, retorna também dict com F1, precision, recall, confusion_matrix
+        grad_clip: Valor máximo da norma L2 dos gradientes (opcional, ex: 1.0)
 
     Returns:
         Se return_metrics=False: Tupla (loss_média, accuracy)
@@ -78,6 +80,9 @@ def run_epoch(
 
             if is_train:
                 scaler.scale(loss).backward()
+                if grad_clip is not None and grad_clip > 0:
+                    scaler.unscale_(optimizer)
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
                 scaler.step(optimizer)
                 scaler.update()
 

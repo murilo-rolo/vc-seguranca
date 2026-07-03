@@ -20,7 +20,6 @@ import torch.nn as nn
 import torchvision.models as models
 from typing import Tuple, Optional
 
-# Tentar importar ResNet34_Weights (disponível em torchvision >= 0.13)
 try:
     from torchvision.models import ResNet34_Weights
     HAS_WEIGHTS_API = True
@@ -32,19 +31,18 @@ class EmotionNet(nn.Module):
     """
     Modelo CNN para classificação de emoções faciais (FER).
     
-    Baseado em ResNet-18 pré-treinada no ImageNet, adaptado para FER
-    com classifier 2-layer (512 → hidden → num_emotions). A camada
-    oculta com ReLU permite fronteiras de decisão não-lineares,
-    essenciais para separar pares de emoções visualmente similares
-    como contempt↔happy e anger↔disgust, que uma única Linear(512,8)
-    não consegue separar adequadamente.
+    Baseado em ResNet-34 pré-treinada no ImageNet, adaptado para FER
+    com classifier Linear(512, 8). As camadas de baixo nível
+    (conv1, bn1, layer1, layer2) são congeladas para preservar
+    features genéricas do ImageNet e evitar overfitting.
     
     Arquitetura:
-    1. ResNet-18 pré-treinada (backbone, sem FC)
-    2. AdaptiveAvgPool2d (embutida no backbone)
-    3. Classifier 2-layer: Linear(512, hidden) → ReLU → Dropout → Linear(hidden, 8)
+    1. ResNet-34 pré-treinada (backbone, sem FC)
+    2. Conv1 + Layer1 + Layer2 congelados
+    3. AdaptiveAvgPool2d (embutida no backbone)
+    4. Classifier 1-layer: Linear(512, 8)
     """
-    
+
     EMOTION_CLASSES = [
         'neutral', 'happy', 'sad', 'anger', 
         'fear', 'disgust', 'surprise', 'contempt'
@@ -54,24 +52,19 @@ class EmotionNet(nn.Module):
         self,
         num_emotions: int = 8,
         pretrained: bool = True,
-        dropout: float = 0.5,
         input_size: Tuple[int, int] = (224, 224),
-        classifier_hidden: int = 128,
     ):
         """
         Args:
             num_emotions: Número de classes de emoção (padrão: 8 para AffectNet)
             pretrained: Se True, usa ResNet-34 pré-treinada no ImageNet
-            dropout: Taxa de dropout antes da camada final
             input_size: Tamanho de entrada (altura, largura) - padrão: (224, 224)
-            classifier_hidden: Dimensão oculta do classifier 2-layer (default: 128)
         """
         super(EmotionNet, self).__init__()
         
         self.num_emotions = num_emotions
         self.input_size = input_size
         
-        # Carregar ResNet-34 pré-treinada
         if pretrained:
             if HAS_WEIGHTS_API:
                 resnet = models.resnet34(weights=ResNet34_Weights.IMAGENET1K_V1)
@@ -86,19 +79,14 @@ class EmotionNet(nn.Module):
         self.backbone = nn.Sequential(*list(resnet.children())[:-1])
         self.feature_size = 512
         
-        # Classifier 2-layer: 512 → hidden → num_emotions
-        # A camada oculta com ReLU adiciona não-linearidade ao decisor,
-        # permitindo fronteiras mais complexas entre classes similares
-        self.classifier = nn.Sequential(
-            nn.Linear(self.feature_size, classifier_hidden),
-            nn.ReLU(inplace=True),
-            nn.Dropout(dropout),
-            nn.Linear(classifier_hidden, num_emotions),
-        )
-        for m in self.classifier:
-            if isinstance(m, nn.Linear):
-                nn.init.xavier_uniform_(m.weight)
-                nn.init.constant_(m.bias, 0)
+        self.backbone[0].requires_grad_(False)
+        self.backbone[1].requires_grad_(False)
+        self.backbone[4].requires_grad_(False)
+        self.backbone[5].requires_grad_(False)
+        
+        self.classifier = nn.Linear(self.feature_size, num_emotions)
+        nn.init.xavier_uniform_(self.classifier.weight)
+        nn.init.constant_(self.classifier.bias, 0)
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -161,9 +149,7 @@ class EmotionNet(nn.Module):
 def create_emotion_model(
     num_emotions: int = 8,
     pretrained: bool = True,
-    dropout: float = 0.5,
     input_size: Tuple[int, int] = (224, 224),
-    classifier_hidden: int = 128,
     checkpoint_path: Optional[str] = None,
     resume_training: bool = False,
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
@@ -174,9 +160,7 @@ def create_emotion_model(
     Args:
         num_emotions: Número de classes de emoção
         pretrained: Se True, usa ResNet-34 pré-treinada
-        dropout: Taxa de dropout
         input_size: Tamanho de entrada
-        classifier_hidden: Dimensão oculta do classifier 2-layer
         checkpoint_path: Caminho para checkpoint pré-treinado (opcional)
         resume_training: Se True, retorna (model, checkpoint) e não força eval()
         device: Device para mover o modelo
@@ -187,9 +171,7 @@ def create_emotion_model(
     model = EmotionNet(
         num_emotions=num_emotions,
         pretrained=pretrained,
-        dropout=dropout,
         input_size=input_size,
-        classifier_hidden=classifier_hidden,
     )
     
     ckpt = None
