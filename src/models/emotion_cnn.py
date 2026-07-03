@@ -32,15 +32,15 @@ class EmotionNet(nn.Module):
     Modelo CNN para classificação de emoções faciais (FER).
     
     Baseado em ResNet-34 pré-treinada no ImageNet, adaptado para FER
-    com classifier Linear(512, 8). As camadas de baixo nível
-    (conv1, bn1, layer1, layer2) são congeladas para preservar
-    features genéricas do ImageNet e evitar overfitting.
+    com classifier 2-layer (512 → 128 → 8) com ReLU. As camadas
+    de baixo nível (conv1, bn1, layer1) são congeladas para
+    preservar features genéricas do ImageNet e evitar overfitting.
     
     Arquitetura:
     1. ResNet-34 pré-treinada (backbone, sem FC)
-    2. Conv1 + Layer1 + Layer2 congelados
+    2. Conv1 + Layer1 congelados
     3. AdaptiveAvgPool2d (embutida no backbone)
-    4. Classifier 1-layer: Linear(512, 8)
+    4. Classifier 2-layer: Linear(512, 128) → ReLU → Linear(128, 8)
     """
 
     EMOTION_CLASSES = [
@@ -82,11 +82,16 @@ class EmotionNet(nn.Module):
         self.backbone[0].requires_grad_(False)
         self.backbone[1].requires_grad_(False)
         self.backbone[4].requires_grad_(False)
-        self.backbone[5].requires_grad_(False)
-        
-        self.classifier = nn.Linear(self.feature_size, num_emotions)
-        nn.init.xavier_uniform_(self.classifier.weight)
-        nn.init.constant_(self.classifier.bias, 0)
+
+        self.classifier = nn.Sequential(
+            nn.Linear(self.feature_size, 128),
+            nn.ReLU(inplace=True),
+            nn.Linear(128, num_emotions),
+        )
+        for m in self.classifier:
+            if isinstance(m, nn.Linear):
+                nn.init.xavier_uniform_(m.weight)
+                nn.init.constant_(m.bias, 0)
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
