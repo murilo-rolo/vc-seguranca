@@ -227,7 +227,7 @@ def main():
     parser.add_argument(
         "--learning_rate",
         type=float,
-        default=1e-4,
+        default=1e-5,
         help="Learning rate"
     )
     
@@ -269,7 +269,7 @@ def main():
     parser.add_argument(
         "--focal-gamma",
         type=float,
-        default=0.5,
+        default=2,
         help="Gamma da Focal Loss (default: 0.5)"
     )
     

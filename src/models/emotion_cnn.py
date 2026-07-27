@@ -32,15 +32,12 @@ class EmotionNet(nn.Module):
     Modelo CNN para classificação de emoções faciais (FER).
     
     Baseado em ResNet-34 pré-treinada no ImageNet, adaptado para FER
-    com classifier 2-layer (512 → 128 → 8) com ReLU. As camadas
-    de baixo nível (conv1, bn1, layer1) são congeladas para
-    preservar features genéricas do ImageNet e evitar overfitting.
+    com classifier 2-layer (512 → 128 → 8) com ReLU.
     
     Arquitetura:
     1. ResNet-34 pré-treinada (backbone, sem FC)
-    2. Conv1 + Layer1 congelados
-    3. AdaptiveAvgPool2d (embutida no backbone)
-    4. Classifier 2-layer: Linear(512, 128) → ReLU → Linear(128, 8)
+    2. AdaptiveAvgPool2d (embutida no backbone)
+    3. Classifier 2-layer: Linear(512, 128) → ReLU → Linear(128, 8)
     """
 
     EMOTION_CLASSES = [
@@ -78,12 +75,9 @@ class EmotionNet(nn.Module):
         
         self.backbone = nn.Sequential(*list(resnet.children())[:-1])
         self.feature_size = 512
-        
-        self.backbone[0].requires_grad_(False)
-        self.backbone[1].requires_grad_(False)
-        self.backbone[4].requires_grad_(False)
 
         self.classifier = nn.Sequential(
+            nn.Dropout(0.3),
             nn.Linear(self.feature_size, 128),
             nn.ReLU(inplace=True),
             nn.Linear(128, num_emotions),
