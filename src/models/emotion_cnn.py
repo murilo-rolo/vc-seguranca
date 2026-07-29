@@ -1,7 +1,7 @@
 """
 Modelo de CNN para reconhecimento de emoções faciais (FER - Facial Expression Recognition).
 
-Arquitetura baseada em ResNet-34 pré-treinada no ImageNet, adaptada para classificação
+Arquitetura baseada em ResNet-50 pré-treinada no ImageNet, adaptada para classificação
 de emoções usando o dataset AffectNet.
 
 Classes de emoção (8 classes padrão):
@@ -21,7 +21,7 @@ import torchvision.models as models
 from typing import Tuple, Optional
 
 try:
-    from torchvision.models import ResNet34_Weights
+    from torchvision.models import ResNet50_Weights
     HAS_WEIGHTS_API = True
 except ImportError:
     HAS_WEIGHTS_API = False
@@ -31,13 +31,13 @@ class EmotionNet(nn.Module):
     """
     Modelo CNN para classificação de emoções faciais (FER).
     
-    Baseado em ResNet-34 pré-treinada no ImageNet, adaptado para FER
-    com classifier 2-layer (512 → 128 → 8) com ReLU.
+    Baseado em ResNet-50 pré-treinada no ImageNet, adaptado para FER
+    com classifier 2-layer (2048 → 128 → 8) com ReLU.
     
     Arquitetura:
-    1. ResNet-34 pré-treinada (backbone, sem FC)
+    1. ResNet-50 pré-treinada (backbone, sem FC)
     2. AdaptiveAvgPool2d (embutida no backbone)
-    3. Classifier 2-layer: Linear(512, 128) → ReLU → Linear(128, 8)
+    3. Classifier 2-layer: Linear(2048, 128) → ReLU → Linear(128, 8)
     """
 
     EMOTION_CLASSES = [
@@ -54,7 +54,7 @@ class EmotionNet(nn.Module):
         """
         Args:
             num_emotions: Número de classes de emoção (padrão: 8 para AffectNet)
-            pretrained: Se True, usa ResNet-34 pré-treinada no ImageNet
+            pretrained: Se True, usa ResNet-50 pré-treinada no ImageNet
             input_size: Tamanho de entrada (altura, largura) - padrão: (224, 224)
         """
         super(EmotionNet, self).__init__()
@@ -64,17 +64,17 @@ class EmotionNet(nn.Module):
         
         if pretrained:
             if HAS_WEIGHTS_API:
-                resnet = models.resnet34(weights=ResNet34_Weights.IMAGENET1K_V1)
+                resnet = models.resnet50(weights=ResNet50_Weights.IMAGENET1K_V1)
             else:
-                resnet = models.resnet34(pretrained=True)
+                resnet = models.resnet50(pretrained=True)
         else:
             if HAS_WEIGHTS_API:
-                resnet = models.resnet34(weights=None)
+                resnet = models.resnet50(weights=None)
             else:
-                resnet = models.resnet34(pretrained=False)
+                resnet = models.resnet50(pretrained=False)
         
         self.backbone = nn.Sequential(*list(resnet.children())[:-1])
-        self.feature_size = 512
+        self.feature_size = 2048
 
         self.classifier = nn.Sequential(
             nn.Dropout(0.3),
@@ -97,8 +97,8 @@ class EmotionNet(nn.Module):
         Returns:
             Tensor de saída (batch_size, num_emotions) com logits
         """
-        features = self.backbone(x)                       # (B, 512, 1, 1)
-        features = features.view(features.size(0), -1)    # (B, 512)
+        features = self.backbone(x)                       # (B, 2048, 1, 1)
+        features = features.view(features.size(0), -1)    # (B, 2048)
         logits = self.classifier(features)                 # (B, num_emotions)
         return logits
     
@@ -158,7 +158,7 @@ def create_emotion_model(
     
     Args:
         num_emotions: Número de classes de emoção
-        pretrained: Se True, usa ResNet-34 pré-treinada
+        pretrained: Se True, usa ResNet-50 pré-treinada
         input_size: Tamanho de entrada
         checkpoint_path: Caminho para checkpoint pré-treinado (opcional)
         resume_training: Se True, retorna (model, checkpoint) e não força eval()
