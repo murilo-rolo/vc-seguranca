@@ -1,8 +1,8 @@
 """
 Modelo de CNN para reconhecimento de emoções faciais (FER - Facial Expression Recognition).
 
-Arquitetura baseada em ResNet-50 pré-treinada no ImageNet, adaptada para classificação
-de emoções usando o dataset AffectNet.
+Arquitetura baseada em Vision Transformer (ViT-B/16) pré-treinada no ImageNet,
+adaptada para classificação de emoções usando o dataset AffectNet.
 
 Classes de emoção (8 classes padrão):
 - 0: Neutral
@@ -17,27 +17,20 @@ Classes de emoção (8 classes padrão):
 
 import torch
 import torch.nn as nn
-import torchvision.models as models
+import timm
 from typing import Tuple, Optional
-
-try:
-    from torchvision.models import ResNet50_Weights
-    HAS_WEIGHTS_API = True
-except ImportError:
-    HAS_WEIGHTS_API = False
 
 
 class EmotionNet(nn.Module):
     """
-    Modelo CNN para classificação de emoções faciais (FER).
+    Modelo ViT para classificação de emoções faciais (FER).
     
-    Baseado em ResNet-50 pré-treinada no ImageNet, adaptado para FER
-    com classifier 2-layer (2048 → 128 → 8) com ReLU.
+    Baseado em Vision Transformer (ViT-B/16) pré-treinada no ImageNet,
+    adaptado para FER com classifier 2-layer (768 → 128 → 8) com ReLU.
     
     Arquitetura:
-    1. ResNet-50 pré-treinada (backbone, sem FC)
-    2. AdaptiveAvgPool2d (embutida no backbone)
-    3. Classifier 2-layer: Linear(2048, 128) → ReLU → Linear(128, 8)
+    1. ViT-B/16 pré-treinada (backbone, sem classifier)
+    2. Classifier 2-layer: Linear(768, 128) → ReLU → Linear(128, 8)
     """
 
     EMOTION_CLASSES = [
@@ -54,7 +47,7 @@ class EmotionNet(nn.Module):
         """
         Args:
             num_emotions: Número de classes de emoção (padrão: 8 para AffectNet)
-            pretrained: Se True, usa ResNet-50 pré-treinada no ImageNet
+            pretrained: Se True, usa ViT-B/16 pré-treinada no ImageNet
             input_size: Tamanho de entrada (altura, largura) - padrão: (224, 224)
         """
         super(EmotionNet, self).__init__()
@@ -62,19 +55,12 @@ class EmotionNet(nn.Module):
         self.num_emotions = num_emotions
         self.input_size = input_size
         
-        if pretrained:
-            if HAS_WEIGHTS_API:
-                resnet = models.resnet50(weights=ResNet50_Weights.IMAGENET1K_V1)
-            else:
-                resnet = models.resnet50(pretrained=True)
-        else:
-            if HAS_WEIGHTS_API:
-                resnet = models.resnet50(weights=None)
-            else:
-                resnet = models.resnet50(pretrained=False)
-        
-        self.backbone = nn.Sequential(*list(resnet.children())[:-1])
-        self.feature_size = 2048
+        self.backbone = timm.create_model(
+            "vit_base_patch16_224",
+            pretrained=pretrained,
+            num_classes=0,
+        )
+        self.feature_size = self.backbone.num_features  # 768
 
         self.classifier = nn.Sequential(
             nn.Dropout(0.3),
@@ -97,9 +83,8 @@ class EmotionNet(nn.Module):
         Returns:
             Tensor de saída (batch_size, num_emotions) com logits
         """
-        features = self.backbone(x)                       # (B, 2048, 1, 1)
-        features = features.view(features.size(0), -1)    # (B, 2048)
-        logits = self.classifier(features)                 # (B, num_emotions)
+        features = self.backbone(x)       # (B, 768)
+        logits = self.classifier(features) # (B, num_emotions)
         return logits
     
     def predict_emotions(
@@ -158,7 +143,7 @@ def create_emotion_model(
     
     Args:
         num_emotions: Número de classes de emoção
-        pretrained: Se True, usa ResNet-50 pré-treinada
+        pretrained: Se True, usa ViT-B/16 pré-treinada
         input_size: Tamanho de entrada
         checkpoint_path: Caminho para checkpoint pré-treinado (opcional)
         resume_training: Se True, retorna (model, checkpoint) e não força eval()
