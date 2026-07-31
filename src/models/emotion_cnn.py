@@ -26,11 +26,11 @@ class EmotionNet(nn.Module):
     Modelo EfficientNet para classificação de emoções faciais (FER).
     
     Baseado em EfficientNet-B2 pré-treinada no ImageNet, adaptado para FER
-    com classifier 2-layer (1408 → 128 → 8) com ReLU.
+    com classifier 2-layer (1408 → 512 → 8) com ReLU.
     
     Arquitetura:
     1. EfficientNet-B2 pré-treinada (backbone, sem classifier)
-    2. Classifier 2-layer: Linear(1408, 128) → ReLU → Linear(128, 8)
+    2. Classifier 2-layer: Linear(1408, 512) → ReLU → Linear(512, 8)
     """
 
     EMOTION_CLASSES = [
@@ -64,9 +64,9 @@ class EmotionNet(nn.Module):
 
         self.classifier = nn.Sequential(
             nn.Dropout(0.3),
-            nn.Linear(self.feature_size, 128),
+            nn.Linear(self.feature_size, 512),
             nn.ReLU(inplace=True),
-            nn.Linear(128, num_emotions),
+            nn.Linear(512, num_emotions),
         )
         for m in self.classifier:
             if isinstance(m, nn.Linear):
