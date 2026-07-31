@@ -427,7 +427,7 @@ def main():
     print(f"Sampler balanceado: {'ON' if args.sampler else 'OFF'}")
     print(f"Early stop patience: {args.early_stop_patience}")
     print(f"Min confidence: {args.min_confidence}")
-    print(f"Classifier:           Linear(768→8)")
+    print(f"Classifier:           Linear(1408→8)")
     print(f"Loss function:         Focal Loss (γ={args.focal_gamma})")
     print(f"Resume: {'ON (época ' + str(ckpt['epoch']) + ')' if args.resume and ckpt is not None else 'OFF'}")
     print("=" * 60)
