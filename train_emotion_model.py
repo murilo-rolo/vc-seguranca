@@ -270,7 +270,7 @@ def main():
         "--focal-gamma",
         type=float,
         default=2,
-        help="Gamma da Focal Loss (default: 0.5)"
+        help="Gamma da Focal Loss (default: 2)"
     )
     
     parser.add_argument(
