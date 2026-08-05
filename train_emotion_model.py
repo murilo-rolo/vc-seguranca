@@ -1,5 +1,8 @@
 """
 Script de treinamento para modelo de Emotion Recognition no dataset AffectNet.
+
+Arquitetura: DeiT-Small (Data-efficient Image Transformer) pré-treinada no ImageNet,
+adaptada para classificação de 8 emoções faciais.
 """
 
 import argparse
@@ -255,8 +258,15 @@ def main():
     parser.add_argument(
         "--weight_decay",
         type=float,
-        default=1e-4,
-        help="Weight decay (L2 regularization) para o Adam"
+        default=0.05,
+        help="Weight decay (L2 regularization) para o AdamW"
+    )
+    
+    parser.add_argument(
+        "--warmup_epochs",
+        type=int,
+        default=5,
+        help="Número de épocas de warmup linear (default: 5)"
     )
     
     parser.add_argument(
@@ -382,20 +392,31 @@ def main():
     
     criterion = FocalLoss(gamma=args.focal_gamma)
     
-    optimizer = optim.Adam(
+    optimizer = optim.AdamW(
         model.parameters(),
         lr=args.learning_rate,
         weight_decay=args.weight_decay
     )
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode='min', factor=0.5, patience=3
+    warmup_scheduler = optim.lr_scheduler.LinearLR(
+        optimizer, start_factor=0.01, total_iters=args.warmup_epochs
+    )
+    cosine_scheduler = optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, T_max=args.epochs - args.warmup_epochs
+    )
+    scheduler = optim.lr_scheduler.SequentialLR(
+        optimizer,
+        schedulers=[warmup_scheduler, cosine_scheduler],
+        milestones=[args.warmup_epochs]
     )
     
     # Restaurar optimizer, scheduler e early stopping no resume
     if args.resume and ckpt is not None:
         optimizer.load_state_dict(ckpt['optimizer_state_dict'])
         if 'scheduler_state_dict' in ckpt:
-            scheduler.load_state_dict(ckpt['scheduler_state_dict'])
+            try:
+                scheduler.load_state_dict(ckpt['scheduler_state_dict'])
+            except Exception:
+                print("⚠️  Scheduler state incompatível (mudou de ReduceLROnPlateau para Cosine). Recriando scheduler.")
         best_val_acc_early = ckpt['val_acc']
         epochs_no_improve = 0
     else:
@@ -422,12 +443,13 @@ def main():
     print(f"Batch size: {args.batch_size}")
     print(f"Learning rate: {args.learning_rate}")
     print(f"Weight decay: {args.weight_decay}")
+    print(f"Warmup epochs: {args.warmup_epochs}")
     print(f"Mixed precision: {'ON' if args.amp else 'OFF'}")
     print(f"Gradient clip:   {'ON (max_norm=' + str(args.grad_clip) + ')' if args.grad_clip > 0 else 'OFF'}")
     print(f"Sampler balanceado: {'ON' if args.sampler else 'OFF'}")
     print(f"Early stop patience: {args.early_stop_patience}")
     print(f"Min confidence: {args.min_confidence}")
-    print(f"Classifier:           Linear(1408→512→8)")
+    print(f"Classifier:           Linear(384→128→8)")
     print(f"Loss function:         Focal Loss (γ={args.focal_gamma})")
     print(f"Resume: {'ON (época ' + str(ckpt['epoch']) + ')' if args.resume and ckpt is not None else 'OFF'}")
     print("=" * 60)
@@ -446,8 +468,8 @@ def main():
             desc=f"Epoch {epoch} [Val]"
         )
         
-        # Atualizar learning rate (ReduceLROnPlateau baseado na val_loss)
-        scheduler.step(val_loss)
+        # Atualizar learning rate (cosine annealing + warmup)
+        scheduler.step()
         
         # Salvar histórico
         history['train_loss'].append(train_loss)

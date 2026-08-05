@@ -1,8 +1,10 @@
 """
-Modelo de CNN para reconhecimento de emoções faciais (FER - Facial Expression Recognition).
+Modelo de Vision Transformer para reconhecimento de emoções faciais (FER - Facial Expression Recognition).
 
-Arquitetura baseada em EfficientNet-B2 pré-treinada no ImageNet, adaptada para classificação
-de emoções usando o dataset AffectNet.
+Arquitetura baseada em DeiT-Small (Data-efficient Image Transformer) pré-treinada no ImageNet,
+adaptada para classificação de emoções usando o dataset AffectNet.
+
+DeiT-Small: 22M parâmetros, embed_dim=384, depth=12, num_heads=6, patch_size=16.
 
 Classes de emoção (8 classes padrão):
 - 0: Neutral
@@ -23,14 +25,14 @@ from typing import Tuple, Optional
 
 class EmotionNet(nn.Module):
     """
-    Modelo EfficientNet para classificação de emoções faciais (FER).
+    Modelo DeiT-Small para classificação de emoções faciais (FER).
     
-    Baseado em EfficientNet-B2 pré-treinada no ImageNet, adaptado para FER
-    com classifier 2-layer (1408 → 512 → 8) com ReLU.
+    Baseado em DeiT-Small (Data-efficient Image Transformer) pré-treinada no ImageNet,
+    adaptado para FER com classifier 2-layer (384 → 128 → 8) com ReLU.
     
     Arquitetura:
-    1. EfficientNet-B2 pré-treinada (backbone, sem classifier)
-    2. Classifier 2-layer: Linear(1408, 512) → ReLU → Linear(512, 8)
+    1. DeiT-Small pré-treinada (backbone, sem classifier)
+    2. Classifier 2-layer: Linear(384, 128) → ReLU → Linear(128, 8)
     """
 
     EMOTION_CLASSES = [
@@ -47,7 +49,7 @@ class EmotionNet(nn.Module):
         """
         Args:
             num_emotions: Número de classes de emoção (padrão: 8 para AffectNet)
-            pretrained: Se True, usa EfficientNet-B2 pré-treinada no ImageNet
+            pretrained: Se True, usa DeiT-Small pré-treinada no ImageNet
             input_size: Tamanho de entrada (altura, largura) - padrão: (224, 224)
         """
         super(EmotionNet, self).__init__()
@@ -56,17 +58,18 @@ class EmotionNet(nn.Module):
         self.input_size = input_size
         
         self.backbone = timm.create_model(
-            "efficientnet_b2",
+            "deit_small_patch16_224",
             pretrained=pretrained,
             num_classes=0,
+            drop_path_rate=0.1,
         )
-        self.feature_size = self.backbone.num_features  # 1408
+        self.feature_size = self.backbone.num_features  # 384
 
         self.classifier = nn.Sequential(
             nn.Dropout(0.3),
-            nn.Linear(self.feature_size, 512),
+            nn.Linear(self.feature_size, 128),
             nn.ReLU(inplace=True),
-            nn.Linear(512, num_emotions),
+            nn.Linear(128, num_emotions),
         )
         for m in self.classifier:
             if isinstance(m, nn.Linear):
@@ -83,7 +86,7 @@ class EmotionNet(nn.Module):
         Returns:
             Tensor de saída (batch_size, num_emotions) com logits
         """
-        features = self.backbone(x)       # (B, 1408)
+        features = self.backbone(x)       # (B, 384)
         logits = self.classifier(features) # (B, num_emotions)
         return logits
     
@@ -143,7 +146,7 @@ def create_emotion_model(
     
     Args:
         num_emotions: Número de classes de emoção
-        pretrained: Se True, usa EfficientNet-B2 pré-treinada
+        pretrained: Se True, usa DeiT-Small pré-treinada
         input_size: Tamanho de entrada
         checkpoint_path: Caminho para checkpoint pré-treinado (opcional)
         resume_training: Se True, retorna (model, checkpoint) e não força eval()
