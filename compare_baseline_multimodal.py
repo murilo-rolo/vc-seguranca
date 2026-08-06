@@ -132,13 +132,13 @@ def main():
     parser.add_argument(
         "--baseline_model_path",
         type=str,
-        required=True,
+        default="models/resnet_lstm/weights/best_model.pth",
         help="Caminho para modelo baseline (ResNet-LSTM)"
     )
     parser.add_argument(
         "--multimodal_model_path",
         type=str,
-        required=True,
+        default="models/multimodal/weights/best_model.pth",
         help="Caminho para modelo multimodal"
     )
     parser.add_argument(
