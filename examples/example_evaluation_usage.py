@@ -164,7 +164,7 @@ if __name__ == "__main__":
         
         print("\n⚠ Descomente um dos exemplos acima para executar")
         print("\nOu use o script principal:")
-        print(f"  python run_evaluation.py --model baseline --model_path {p.MODELS_ROOT / 'best_model.pth'} --all")
+        print(f"  python run_evaluation.py --model baseline --model_path {p.RESNET_LSTM_WEIGHTS / 'best_model.pth'} --all")
         
     except Exception as e:
         print(f"\nErro: {e}")

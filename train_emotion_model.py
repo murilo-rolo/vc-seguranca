@@ -324,9 +324,11 @@ def main():
     args = parser.parse_args()
     
     args.dataset_path = str(p.AFFECTNET_ROOT)
-    # Criar diretório de saída
-    output_dir = p.EMOTION_MODELS_ROOT
+    # Criar diretórios de saída (nova estrutura por modelo)
+    output_dir = p.EMOTION_CNN_WEIGHTS
     output_dir.mkdir(parents=True, exist_ok=True)
+    experiments_dir = p.EMOTION_CNN_EXPERIMENTS
+    experiments_dir.mkdir(parents=True, exist_ok=True)
     
     # Criar datasets
     train_dataset = AffectNetDataset(
@@ -367,7 +369,7 @@ def main():
     # Criar modelo
     device = torch.device(args.device)
     
-    resume_checkpoint_path = output_dir / 'best_model.pth'
+    resume_checkpoint_path = p.EMOTION_CNN_WEIGHTS / 'best_model.pth'
     start_epoch = 1
     ckpt = None
     
@@ -497,11 +499,11 @@ def main():
             
             # Salvar matriz de confusão da melhor época
             cm = np.array(val_metrics['confusion_matrix'])
-            np.save(output_dir / 'confusion_matrix.npy', cm)
+            np.save(experiments_dir / 'confusion_matrix.npy', cm)
             _plot_confusion_matrix(
                 cm,
                 class_names=list(AFFECTNET_CLASSES.keys()),
-                output_path=output_dir / 'confusion_matrix.png'
+                output_path=experiments_dir / 'confusion_matrix.png'
             )
             print(f"\n✓ Melhor modelo salvo! Val Acc: {val_acc:.2f}%")
         
@@ -522,7 +524,7 @@ def main():
     model.load_state_dict(checkpoint['model_state_dict'])
     
     # Salvar histórico
-    with open(output_dir / 'training_history.json', 'w') as f:
+    with open(experiments_dir / 'training_history.json', 'w') as f:
         json.dump(history, f, indent=2)
     
     print("=" * 60)
@@ -530,7 +532,7 @@ def main():
     print(f"Melhor Val Acc: {best_val_acc:.2f}%")
     print(f"Melhor Val F1:  {max(history['val_f1']):.4f}")
     print(f"Modelo recarregado do best checkpoint (época {checkpoint['epoch']})")
-    print(f"Modelo salvo em: {output_dir / 'best_model.pth'}")
+    print(f"Modelo salvo em: {p.EMOTION_CNN_WEIGHTS / 'best_model.pth'}")
     print("=" * 60)
 
 

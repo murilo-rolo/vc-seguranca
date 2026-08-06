@@ -45,6 +45,23 @@ models/**/*
 !models/**/.gitkeep
 !models/**/README.md
 
+# Model weights and checkpoints
+models/**/weights/*.pth
+models/**/weights/*.pt
+models/**/weights/**/*.pth
+models/**/weights/**/*.pt
+models/**/weights/*.npy
+models/**/weights/*.png
+
+# Model experiments (logs, metrics)
+models/**/experiments/*.json
+models/**/experiments/*.npy
+models/**/experiments/*.png
+models/**/experiments/*.txt
+models/**/experiments/**/*.json
+models/**/experiments/**/*.npy
+models/**/experiments/**/*.png
+
 # Data - Ignora todo o conteúdo (mantém apenas estrutura de diretórios vazia)
 # Ignora tudo em data/ exceto arquivos de estrutura (.gitkeep, README, etc.)
 data/**/*

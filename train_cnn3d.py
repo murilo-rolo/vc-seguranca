@@ -34,9 +34,11 @@ def pretrain_ucf101(args):
     print("ETAPA 1: Pré-treinamento em UCF101")
     print("=" * 60)
     
-    # Criar diretório de saída
-    output_dir = p.CNN3D_ROOT / "ucf101"
+    # Criar diretórios de saída (nova estrutura)
+    output_dir = p.CNN3D_UCF101_WEIGHTS
     output_dir.mkdir(parents=True, exist_ok=True)
+    experiments_dir = p.CNN3D_UCF101_EXPERIMENTS
+    experiments_dir.mkdir(parents=True, exist_ok=True)
     
     device = torch.device(args.device)
     
@@ -123,7 +125,7 @@ def pretrain_ucf101(args):
         print()
     
     # Salvar histórico
-    with open(output_dir / 'training_history.json', 'w') as f:
+    with open(experiments_dir / 'training_history.json', 'w') as f:
         json.dump(history, f, indent=2)
     
     print("=" * 60)
@@ -141,9 +143,11 @@ def finetune_rwf2000(args, pretrained_path: Path):
     print("ETAPA 2: Fine-tuning em RWF-2000")
     print("=" * 60)
     
-    # Criar diretório de saída
-    output_dir = p.CNN3D_ROOT / "rwf2000"
+    # Criar diretórios de saída (nova estrutura)
+    output_dir = p.CNN3D_RWF2000_WEIGHTS
     output_dir.mkdir(parents=True, exist_ok=True)
+    experiments_dir = p.CNN3D_RWF2000_EXPERIMENTS
+    experiments_dir.mkdir(parents=True, exist_ok=True)
     
     device = torch.device(args.device)
     
@@ -280,7 +284,7 @@ def finetune_rwf2000(args, pretrained_path: Path):
         print()
     
     # Salvar histórico
-    with open(output_dir / 'training_history.json', 'w') as f:
+    with open(experiments_dir / 'training_history.json', 'w') as f:
         json.dump(history, f, indent=2)
     
     print("=" * 60)
@@ -387,7 +391,7 @@ def main():
     
     if args.stage == "pretrain" or args.stage == "both":
         # Etapa 1: Pré-treinamento
-        args.dataset_root = str(p.DATASET_ROOT / "UCF101")
+        args.dataset_root = str(p.UCF101_ROOT)
         pretrained_path = pretrain_ucf101(args)
         
         if args.stage == "pretrain":
@@ -403,7 +407,7 @@ def main():
         else:
             raise ValueError("Para fine-tuning, forneça --pretrained_path ou use --stage both")
         
-        args.dataset_root = str(p.DATASET_ROOT / "RWF-2000")
+        args.dataset_root = str(p.RWF2000_ROOT)
         finetune_rwf2000(args, pretrained_path)
 
 

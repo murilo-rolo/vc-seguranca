@@ -38,7 +38,6 @@ class TrainingPipeline:
         if project_root is None:
             project_root = str(p.PROJECT_ROOT)
         self.project_root = Path(project_root)
-        self.results_dir = p.RESULTS_ROOT
         self.steps_completed = []
         self.steps_failed = []
         self.force_retrain = force_retrain
@@ -141,7 +140,7 @@ class TrainingPipeline:
     
     def train_resnet_lstm(self, epochs: int = 50, batch_size: int = 8, **kwargs) -> bool:
         """Treina modelo ResNet-LSTM."""
-        model_path = self.results_dir / "models" / "best_model.pth"
+        model_path = p.RESNET_LSTM_WEIGHTS / "best_model.pth"
         
         # Verificar se já existe
         if model_path.exists() and not self.force_retrain:
@@ -177,7 +176,7 @@ class TrainingPipeline:
     
     def train_emotion_net(self, dataset_path: str, epochs: int = 50, batch_size: int = 32, **kwargs) -> bool:
         """Treina modelo EmotionNet."""
-        model_path = self.results_dir / "emotion" / "best_model.pth"
+        model_path = p.EMOTION_CNN_WEIGHTS / "best_model.pth"
         
         # Verificar se já existe
         if model_path.exists() and not self.force_retrain:
@@ -214,9 +213,9 @@ class TrainingPipeline:
     def train_cnn3d(self, stage: str, dataset: str, epochs: int = 50, pretrained_path: Optional[str] = None, **kwargs) -> bool:
         """Treina modelo CNN 3D."""
         if stage == "pretrain":
-            model_path = self.results_dir / "cnn3d" / "ucf101" / "best_model.pth"
+            model_path = p.CNN3D_UCF101_WEIGHTS / "best_model.pth"
         else:
-            model_path = self.results_dir / "cnn3d" / "rwf2000" / "best_model.pth"
+            model_path = p.CNN3D_RWF2000_WEIGHTS / "best_model.pth"
         
         # Verificar se já existe
         if model_path.exists() and not self.force_retrain:
@@ -251,7 +250,7 @@ class TrainingPipeline:
     
     def train_multimodal(self, epochs: int = 50, fusion_method: str = "late", **kwargs) -> bool:
         """Treina modelo multimodal."""
-        model_path = self.results_dir / "multimodal" / "best_model.pth"
+        model_path = p.MULTIMODAL_WEIGHTS / "best_model.pth"
         
         # Verificar se já existe
         if model_path.exists() and not self.force_retrain:
@@ -266,8 +265,8 @@ class TrainingPipeline:
                 return True
         
         # Verificar modelos base
-        video_model_path = self.results_dir / "models" / "best_model.pth"
-        emotion_model_path = self.results_dir / "emotion" / "best_model.pth"
+        video_model_path = p.RESNET_LSTM_WEIGHTS / "best_model.pth"
+        emotion_model_path = p.EMOTION_CNN_WEIGHTS / "best_model.pth"
         
         if not video_model_path.exists():
             print(f"❌ Modelo ResNet-LSTM não encontrado em {video_model_path}")
@@ -335,7 +334,7 @@ class TrainingPipeline:
                     print("⚠️  Falha no pré-treinamento de CNN 3D (continuando)")
                 
                 # Fine-tuning em RWF-2000
-                pretrained_path = str(self.results_dir / "cnn3d" / "ucf101" / "best_model.pth")
+                pretrained_path = str(p.CNN3D_UCF101_WEIGHTS / "best_model.pth")
                 if Path(pretrained_path).exists():
                     if not self.train_cnn3d("finetune", "rwf2000", pretrained_path=pretrained_path, **kwargs):
                         print("⚠️  Falha no fine-tuning de CNN 3D (continuando)")
@@ -478,7 +477,7 @@ Exemplos de uso:
         if not args.skip_cnn3d:
             if Path(args.ucf101_path).exists():
                 pipeline.train_cnn3d("pretrain", "ucf101", **kwargs)
-                pretrained_path = str(pipeline.results_dir / "cnn3d" / "ucf101" / "best_model.pth")
+                pretrained_path = str(p.CNN3D_UCF101_WEIGHTS / "best_model.pth")
                 if Path(pretrained_path).exists():
                     pipeline.train_cnn3d("finetune", "rwf2000", pretrained_path=pretrained_path, **kwargs)
     elif args.multimodal:
@@ -490,7 +489,7 @@ Exemplos de uso:
     elif args.cnn3d:
         if Path(args.ucf101_path).exists():
             pipeline.train_cnn3d("pretrain", "ucf101", **kwargs)
-            pretrained_path = str(pipeline.results_dir / "cnn3d" / "ucf101" / "best_model.pth")
+            pretrained_path = str(p.CNN3D_UCF101_WEIGHTS / "best_model.pth")
             if Path(pretrained_path).exists():
                 pipeline.train_cnn3d("finetune", "rwf2000", pretrained_path=pretrained_path, **kwargs)
     else:

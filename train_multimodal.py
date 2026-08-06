@@ -108,9 +108,11 @@ def main():
     
     args = parser.parse_args()
     
-    # Criar diretório de saída
-    output_dir = p.MULTIMODAL_ROOT
+    # Criar diretórios de saída (nova estrutura)
+    output_dir = p.MULTIMODAL_WEIGHTS
     output_dir.mkdir(parents=True, exist_ok=True)
+    experiments_dir = p.MULTIMODAL_EXPERIMENTS
+    experiments_dir.mkdir(parents=True, exist_ok=True)
     
     device = torch.device(args.device)
     
@@ -206,13 +208,13 @@ def main():
             print(f"\n✓ Melhor modelo salvo! Val Acc: {val_acc:.2f}%")
         print()
 
-    with open(output_dir / 'training_history.json', 'w') as f:
+    with open(experiments_dir / 'training_history.json', 'w') as f:
         json.dump(history, f, indent=2)
 
     print("=" * 60)
     print("Treinamento concluído!")
     print(f"Melhor Val Acc: {best_val_acc:.2f}%")
-    print(f"Modelo salvo em: {output_dir / 'best_model.pth'}")
+    print(f"Modelo salvo em: {p.MULTIMODAL_WEIGHTS / 'best_model.pth'}")
     print("=" * 60)
 
 

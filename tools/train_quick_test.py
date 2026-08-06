@@ -36,7 +36,7 @@ if __name__ == "__main__":
         dropout=0.5,
         num_workers=2,  # Reduzido para economizar recursos
         device=None,  # Auto-detecta (CPU ou GPU)
-        save_dir=str(p.MODELS_ROOT),
+        save_dir=str(p.RESNET_LSTM_WEIGHTS),
         seed=42,
         early_stopping_patience=5,  # Para mais cedo se não melhorar
         use_scheduler=True

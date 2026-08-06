@@ -28,7 +28,7 @@ def train(
     dropout: float = 0.5,
     num_workers: int = 4,
     device: str = None,
-    save_dir: str = str(p.MODELS_ROOT),
+    save_dir: str = str(p.RESNET_LSTM_WEIGHTS),
     seed: int = 42,
     early_stopping_patience: int = 10,
     use_scheduler: bool = True
