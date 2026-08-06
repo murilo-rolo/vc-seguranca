@@ -41,7 +41,6 @@ ENV/
 # *.pt   # Comentado para permitir versionar se necessário
 
 # Models directory (modelos treinados - não versionar)
-models/**/*
 !models/**/.gitkeep
 !models/**/README.md
 
