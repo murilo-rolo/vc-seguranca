@@ -501,6 +501,9 @@ Exemplos de uso:
     print(f"\nDiretório de datasets: {p.DATASET_ROOT}")
     
     success = True
+
+    # Cria diretório /dataset
+    p.DATASET_ROOT.mkdir(parents=True, exist_ok=True)
     
     # --all: Baixar tudo
     if args.all:
