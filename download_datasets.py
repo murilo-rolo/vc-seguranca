@@ -16,11 +16,12 @@ Uso:
 """
 
 import argparse
+import os
 import shutil
 import sys
 import urllib.request
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import List, Optional
 
 from src import paths as p
@@ -66,6 +67,110 @@ def download_file(url: str, dest: Path, description: str = "") -> bool:
         return False
 
 
+def _decode_zip_name(info: zipfile.ZipInfo) -> str:
+    """
+    Decodifica o nome de um membro do ZIP de forma robusta.
+
+    O zipfile do Python decodifica nomes sem o flag UTF-8 como CP437.
+    Isso gera 'mojibake' (e nomes longos demais) para arquivos gravados
+    em UTF-8 sem o flag, como os vídeos em cirílico do RWF-2000.
+    Aqui tentamos recuperar o UTF-8 original quando o flag não está presente.
+    """
+    if info.flag_bits & 0x800:
+        return info.filename
+
+    raw = getattr(info, "orig_filename", info.filename)
+    if isinstance(raw, bytes):
+        # Python < 3.11: orig_filename guarda os bytes crus do arquivo
+        try:
+            return raw.decode("utf-8")
+        except UnicodeDecodeError:
+            return info.filename
+
+    # Python >= 3.11: orig_filename é a string decodificada como CP437.
+    # Revertemos a codificação para obter os bytes originais e tentamos UTF-8.
+    try:
+        return raw.encode("cp437").decode("utf-8")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        return info.filename
+
+
+def _sanitize_component(component: str, max_name_len: int = 255) -> str:
+    """
+    Trunca um componente de caminho para caber no limite de bytes do filesystem.
+
+    A truncagem é feita por bytes (sem cortar no meio de um caractere
+    multibyte) e preserva a extensão do arquivo.
+    """
+    encoded = component.encode("utf-8")
+    if len(encoded) <= max_name_len:
+        return component
+
+    dot = component.rfind(".")
+    if dot > 0:
+        stem, suffix = component[:dot], component[dot:]
+    else:
+        stem, suffix = component, ""
+
+    available = max_name_len - len(suffix.encode("utf-8"))
+    if available <= 0:
+        return component.encode("utf-8")[:max_name_len].decode("utf-8", errors="ignore")
+
+    stem_bytes = stem.encode("utf-8")
+    truncated = stem_bytes[:available].decode("utf-8", errors="ignore")
+    return truncated + suffix
+
+
+def _unique_path(path: Path, max_name_len: int = 255) -> Path:
+    """Garante um caminho sem colisão, adicionando sufixo '_N' se necessário."""
+    if not path.exists():
+        return path
+    suffix = path.suffix
+    suffix_bytes = len(suffix.encode("utf-8"))
+    counter = 1
+    while True:
+        disambig = f"_{counter}"
+        stem_limit = max_name_len - suffix_bytes - len(disambig.encode("utf-8"))
+        stem = _sanitize_component(path.stem, stem_limit)
+        candidate = path.with_name(stem + disambig + suffix)
+        if not candidate.exists():
+            return candidate
+        counter += 1
+
+
+def _extract_member(zip_ref: zipfile.ZipFile, info: zipfile.ZipInfo, dest_dir: Path, max_name_len: int = 255) -> Path:
+    """
+    Extrai um membro do ZIP de forma segura:
+    - corrige a codificação do nome (UTF-8 vs CP437)
+    - evita path traversal ('..' e caminhos absolutos)
+    - trunca componentes que excedam o limite do filesystem
+    """
+    name = _decode_zip_name(info).replace("\\", "/")
+    relative = PurePath(name)
+    parts = [
+        _sanitize_component(part, max_name_len)
+        for part in relative.parts
+        if part not in ("", ".", "..")
+    ]
+    if not parts:
+        return dest_dir
+
+    target = dest_dir
+    for part in parts[:-1]:
+        target = target / part
+
+    final = target / parts[-1]
+    if info.is_dir():
+        final.mkdir(parents=True, exist_ok=True)
+        return final
+
+    target.mkdir(parents=True, exist_ok=True)
+    final = _unique_path(final, max_name_len)
+    with zip_ref.open(info) as src, open(final, "wb") as dst:
+        shutil.copyfileobj(src, dst)
+    return final
+
+
 def extract_zip(zip_path: Path, dest_dir: Path, delete_after: bool = True) -> bool:
     """
     Extrai um arquivo ZIP e opcionalmente deleta após extração.
@@ -87,8 +192,14 @@ def extract_zip(zip_path: Path, dest_dir: Path, delete_after: bool = True) -> bo
     try:
         dest_dir.mkdir(parents=True, exist_ok=True)
         
+        try:
+            max_name_len = os.pathconf(str(dest_dir), "PC_NAME_MAX")
+        except (OSError, ValueError, AttributeError):
+            max_name_len = 255
+        
         with zipfile.ZipFile(str(zip_path), 'r') as zip_ref:
-            zip_ref.extractall(str(dest_dir))
+            for info in zip_ref.infolist():
+                _extract_member(zip_ref, info, dest_dir, max_name_len)
         
         print(f"[OK] Extração concluída: {dest_dir}")
         
