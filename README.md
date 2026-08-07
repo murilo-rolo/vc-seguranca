@@ -401,8 +401,11 @@ Extrai vetores de emoção usando EmotionNet (DeiT-Small):
 python train_emotion_model.py --epochs 60
 
 # Depois, extraia emoções do RWF-2000
-python run_preprocessing.py emotion --model_path models/emotion_cnn/weights/best_model.pth
+python run_preprocessing.py emotion
 ```
+
+O modelo é carregado automaticamente de `models/emotion_cnn/weights/best_model.pth`.
+Se o checkpoint não existir, o script usa pesos ImageNet (modelo não treinado em emoções).
 
 **Opções adicionais:**
 - `--face_detector`: `mtcnn` (padrão), `retinaface` ou `haar`
@@ -956,7 +959,7 @@ Se preferir executar manualmente:
    
    # 3. Treinar EmotionNet e extrair emoções
    python train_emotion_model.py
-   python run_preprocessing.py emotion --model_path models/emotion_cnn/weights/best_model.pth
+   python run_preprocessing.py emotion
    ```
 
 2. **Treinamento de Modelos Base**

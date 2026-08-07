@@ -22,7 +22,7 @@ Uso:
     python run_preprocessing.py pose --dataset rwf2000 --num_frames 16
 
     # Extrair vetores de emoção (RWF-2000)
-    python run_preprocessing.py emotion --model_path models/emotion_cnn/weights/best_model.pth
+    python run_preprocessing.py emotion
 
     # Executar todo o pipeline
     python run_preprocessing.py all --num_frames 16
@@ -32,6 +32,9 @@ import argparse
 import os
 
 from src import paths as p
+
+
+EMOTION_MODEL_PATH = p.EMOTION_CNN_WEIGHTS / "best_model.pth"
 
 
 def _check_dataset_root() -> bool:
@@ -227,23 +230,25 @@ def cmd_emotion(args):
             "Detector de faces": args.face_detector,
             "Agregação": args.aggregation,
             "Device": device,
-            "Modelo": args.model_path if args.model_path else "ImageNet weights (não treinado)",
+            "Modelo": str(EMOTION_MODEL_PATH),
         }
     )
 
     # Carregar modelo
+    checkpoint_path = str(EMOTION_MODEL_PATH) if EMOTION_MODEL_PATH.exists() else None
     print("Carregando modelo de emoção...")
     try:
         model = create_emotion_model(
             num_emotions=8,
             pretrained=True,
-            checkpoint_path=args.model_path,
+            checkpoint_path=checkpoint_path,
             device=device
         )
         print("Modelo carregado com sucesso!")
-        if args.model_path:
-            print(f"  Checkpoint: {args.model_path}")
+        if checkpoint_path:
+            print(f"  Checkpoint: {EMOTION_MODEL_PATH}")
         else:
+            print(f"  ⚠️  Checkpoint não encontrado em: {EMOTION_MODEL_PATH}")
             print("  Usando pesos ImageNet (modelo não treinado em emoções)")
             print("  ⚠️  Para melhor performance, treine o modelo no AffectNet primeiro!")
     except Exception as e:
@@ -347,15 +352,21 @@ def cmd_all(args):
     device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
 
     p.EMOTION_ROOT.mkdir(parents=True, exist_ok=True)
+    checkpoint_path = str(EMOTION_MODEL_PATH) if EMOTION_MODEL_PATH.exists() else None
     print("\nCarregando modelo de emoção...")
     try:
         model = create_emotion_model(
             num_emotions=8,
             pretrained=True,
-            checkpoint_path=args.model_path,
+            checkpoint_path=checkpoint_path,
             device=device
         )
         print("Modelo carregado com sucesso!")
+        if checkpoint_path:
+            print(f"  Checkpoint: {EMOTION_MODEL_PATH}")
+        else:
+            print(f"  ⚠️  Checkpoint não encontrado em: {EMOTION_MODEL_PATH}")
+            print("  Usando pesos ImageNet (modelo não treinado em emoções)")
     except Exception as e:
         print(f"Erro ao carregar modelo de emoção: {e}")
         print("Pulando extração de emoções...")
@@ -391,7 +402,7 @@ def build_parser() -> argparse.ArgumentParser:
                "  python run_preprocessing.py organize\n"
                "  python run_preprocessing.py frames --num_frames 16\n"
                "  python run_preprocessing.py pose --dataset both --num_frames 16\n"
-               "  python run_preprocessing.py emotion --model_path models/emotion_cnn/weights/best_model.pth\n"
+               "  python run_preprocessing.py emotion\n"
                "  python run_preprocessing.py all --num_frames 16\n"
     )
 
@@ -476,10 +487,6 @@ def build_parser() -> argparse.ArgumentParser:
         description="Extrai vetores de emoção de vídeos do dataset RWF-2000."
     )
     p_emotion.add_argument(
-        "--model_path", type=str, default=None,
-        help="Caminho para modelo EmotionNet pré-treinado (opcional, usa ImageNet weights se não fornecido)"
-    )
-    p_emotion.add_argument(
         "--num_frames", type=int, default=None,
         help="Número de frames a processar por vídeo (None = todos os frames)"
     )
@@ -531,10 +538,6 @@ def build_parser() -> argparse.ArgumentParser:
     p_all.add_argument(
         "--model_complexity", type=int, choices=[0, 1, 2], default=1,
         help="Complexidade do modelo MediaPipe (padrão: 1)"
-    )
-    p_all.add_argument(
-        "--model_path", type=str, default=None,
-        help="Caminho para modelo EmotionNet pré-treinado (opcional)"
     )
     p_all.add_argument(
         "--face_detector", type=str, choices=["mtcnn", "retinaface", "haar"], default="mtcnn",
