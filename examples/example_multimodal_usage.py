@@ -197,9 +197,9 @@ if __name__ == "__main__":
     except FileNotFoundError as e:
         print(f"\nErro: {e}")
         print(f"\nCertifique-se de ter executado:")
-        print("  1. run_preprocessing.py (para vídeo)")
-        print("  2. run_pose_preprocessing.py (para pose)")
-        print("  3. run_emotion_preprocessing.py (para emoção)")
+        print("  1. run_preprocessing.py frames (para vídeo)")
+        print("  2. run_preprocessing.py pose (para pose)")
+        print("  3. run_preprocessing.py emotion (para emoção)")
     except Exception as e:
         print(f"\nErro inesperado: {e}")
         import traceback

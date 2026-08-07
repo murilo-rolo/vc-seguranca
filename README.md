@@ -338,14 +338,22 @@ Arquitetura multimodal que combina todas as modalidades:
 
 ### 1. Pré-processamento
 
-O pré-processamento é dividido em múltiplas etapas para extrair diferentes modalidades:
+Todo o pré-processamento é feito por **um único script** (`run_preprocessing.py`) com subcomandos:
+
+| Subcomando | Descrição |
+|---|---|
+| `organize` | Organiza os vídeos do RWF-2000 em `data/raw` |
+| `frames` | Extrai N frames por vídeo, redimensiona e normaliza em `data/processed` |
+| `pose` | Extrai keypoints de pose (MediaPipe) em `data/pose` |
+| `emotion` | Extrai vetores de emoção (EmotionNet) em `data/emotion` |
+| `all` | Executa todas as etapas em sequência |
 
 #### Passo 1: Organizar vídeos
 
 Organiza os vídeos do dataset RWF-2000:
 
 ```bash
-python run_preprocessing.py
+python run_preprocessing.py organize
 ```
 
 Ou manualmente:
@@ -358,17 +366,23 @@ python -m src.preprocessing.organize_videos
 Extrai N frames por vídeo, redimensiona e normaliza:
 
 ```bash
-python run_preprocessing.py
+python run_preprocessing.py frames --num_frames 16
 # ou
 python -m src.preprocessing.extract_frames
 ```
+
+**Opções:**
+- `--num_frames`: Número de frames por vídeo (padrão 16)
+- `--target_size`: Tamanho (altura largura) dos frames (padrão `112 112`)
+- `--normalize` / `--no-normalize`: Normaliza pixels para [0, 1] (padrão: ligado)
+- `--workers`: Workers paralelos para extração
 
 #### Passo 3: Extrair keypoints de pose
 
 Extrai keypoints de pose usando MediaPipe:
 
 ```bash
-python run_pose_preprocessing.py --dataset rwf2000 --num_frames 16
+python run_preprocessing.py pose --dataset rwf2000 --num_frames 16
 ```
 
 **Opções:**
@@ -387,13 +401,22 @@ Extrai vetores de emoção usando EmotionNet (DeiT-Small):
 python train_emotion_model.py --epochs 60
 
 # Depois, extraia emoções do RWF-2000
-python run_emotion_preprocessing.py --dataset rwf2000 --model_path models/emotion_cnn/weights/best_model.pth
+python run_preprocessing.py emotion --model_path models/emotion_cnn/weights/best_model.pth
 ```
 
 **Opções adicionais:**
 - `--face_detector`: `mtcnn` (padrão), `retinaface` ou `haar`
 - `--aggregation`: `mean` (padrão) ou `max` (agregação temporal)
 - `--num_frames`: Número de frames por vídeo (None = todos)
+- `--device`: `cuda` (padrão, se disponível) ou `cpu`
+
+#### Pipeline completo
+
+Executa todas as etapas em sequência (organize → frames → pose → emotion):
+
+```bash
+python run_preprocessing.py all --num_frames 16
+```
 
 **Configuração customizada:**
 
@@ -925,14 +948,15 @@ Se preferir executar manualmente:
 1. **Pré-processamento de Dados**
    ```bash
    # 1. Organizar vídeos e extrair frames
-   python run_preprocessing.py
+   python run_preprocessing.py organize
+   python run_preprocessing.py frames --num_frames 16
    
    # 2. Extrair pose
-   python run_pose_preprocessing.py --dataset rwf2000
+   python run_preprocessing.py pose --dataset rwf2000
    
    # 3. Treinar EmotionNet e extrair emoções
    python train_emotion_model.py
-   python run_emotion_preprocessing.py --dataset rwf2000 --model_path models/emotion_cnn/weights/best_model.pth
+   python run_preprocessing.py emotion --model_path models/emotion_cnn/weights/best_model.pth
    ```
 
 2. **Treinamento de Modelos Base**

@@ -148,7 +148,7 @@ if __name__ == "__main__":
     print("\n" + "=" * 60)
     print("Exemplos de Uso do Módulo de Pose Estimation")
     print("=" * 60)
-    print(f"\nCertifique-se de ter executado run_pose_preprocessing.py primeiro!")
+    print(f"\nCertifique-se de ter executado run_preprocessing.py pose primeiro!")
     print(f"Os dados de pose devem estar em {p.POSE_ROOT}/\n")
     
     try:
@@ -163,7 +163,7 @@ if __name__ == "__main__":
     except FileNotFoundError as e:
         print(f"\nErro: {e}")
         print(f"\nCertifique-se de:")
-        print("  1. Executar run_pose_preprocessing.py primeiro")
+        print("  1. Executar run_preprocessing.py pose primeiro")
         print(f"  2. Verificar se os dados estão em {p.POSE_ROOT}/")
     except Exception as e:
         print(f"\nErro inesperado: {e}")

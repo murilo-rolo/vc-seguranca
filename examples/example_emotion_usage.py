@@ -161,7 +161,7 @@ if __name__ == "__main__":
     print("\n" + "=" * 60)
     print("Exemplos de Uso do Módulo de Emotion Recognition")
     print("=" * 60)
-    print(f"\nCertifique-se de ter executado run_emotion_preprocessing.py primeiro!")
+    print(f"\nCertifique-se de ter executado run_preprocessing.py emotion primeiro!")
     print(f"Os dados de emoção devem estar em {p.EMOTION_ROOT}/\n")
     
     try:
@@ -176,7 +176,7 @@ if __name__ == "__main__":
     except FileNotFoundError as e:
         print(f"\nErro: {e}")
         print(f"\nCertifique-se de:")
-        print("  1. Executar run_emotion_preprocessing.py primeiro")
+        print("  1. Executar run_preprocessing.py emotion primeiro")
         print(f"  2. Verificar se os dados estão em {p.EMOTION_ROOT}/")
     except Exception as e:
         print(f"\nErro inesperado: {e}")
