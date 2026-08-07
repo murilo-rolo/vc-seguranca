@@ -26,7 +26,7 @@ Sistema avançado de detecção de violência em vídeos de segurança (CCTV) ut
 
 ## Visão Geral
 
-Este projeto foi desenvolvido como parte de um trabalho de mestrado em Visão Computacional. O sistema é capaz de analisar vídeos de câmeras de segurança e identificar automaticamente situações de violência, auxiliando em sistemas de monitoramento automatizado.
+Este projeto está sendo desenvolvido como parte de um projeto de pesquisa em Visão Computacional. O sistema é capaz de analisar vídeos de câmeras de segurança e identificar automaticamente situações de violência, auxiliando em sistemas de monitoramento automatizado.
 
 ### Aplicações
 
@@ -41,7 +41,7 @@ Este projeto foi desenvolvido como parte de um trabalho de mestrado em Visão Co
 - **Múltiplos Modelos**: 
   - ResNet-LSTM para análise temporal de vídeo
   - CNN 3D (R3D, R(2+1)D, MC3) para action recognition
-  - EmotionNet para classificação de emoções faciais
+  - EmotionNet (DeiT-Small Vision Transformer) para classificação de emoções faciais
   - MultimodalRiskDetector para fusão de múltiplas modalidades
 - **Estratégias de Fusão**: Early Fusion, Late Fusion e Attention-based Fusion
 - **Transfer Learning**: Utiliza pesos pré-treinados (ImageNet, Kinetics400, UCF101)
@@ -49,10 +49,14 @@ Este projeto foi desenvolvido como parte de um trabalho de mestrado em Visão Co
 - **Detecção em Tempo Real**: Suporte para webcam e streams RTSP
 - **Sistema de Alertas**: Threshold configurável e detecção de janelas consecutivas
 - **Altamente Configurável**: Parâmetros ajustáveis para diferentes cenários
-- **Otimizado para Recursos Limitados**: Suporta treinamento em CPUs e GPUs
+- **Otimizado para Recursos Limitados**: Suporta treinamento em CPUs e GPUs, mixed precision (AMP) e gradient clipping
 - **Métricas Detalhadas**: Gera relatórios completos de avaliação
+- **Pipeline de Avaliação Experimental**: Métricas, robustez a distorções, performance (FPS/latência) e análise de limitações
+- **Treinamento Robusto do EmotionNet**: Focal Loss, WeightedRandomSampler, warmup + cosine annealing, early stopping e resume de treino
+- **Download Automático de Datasets**: `download_datasets.py` baixa RWF-2000, UCF101 e AffectNet via Kaggle API
 - **Código modular**: Funções de treino/validação centralizadas em `src/training/utils.py`
 - **Gerenciamento Centralizado de Caminhos**: `src/paths.py` detecta automaticamente o ambiente (local ou Google Colab) e configura todos os diretórios do projeto
+- **Organização de Modelos por Pasta**: Pesos e experimentos organizados em `models/<modelo>/weights/` e `models/<modelo>/experiments/`
 
 ## Datasets
 
@@ -104,13 +108,14 @@ dataset/UCF101/
 
 **AffectNet** - Usado para treinar o modelo de reconhecimento de emoções faciais:
 
-- **8 classes de emoção**: Neutral, Happy, Sad, Angry, Fearful, Disgust, Surprise, Contempt
+- **8 classes de emoção**: Neutral, Happy, Sad, Anger, Fear, Disgust, Surprise, Contempt
 - ~1.000.000 imagens de faces com anotações de emoção
 - Disponível em: [AffectNet](http://mohammadmahoor.com/affectnet/)
 
 **Estrutura esperada:**
 ```
 dataset/AffectNet/
+├── labels.csv                    # Ground truth oficial (colunas: pth, label, relFCs)
 ├── Train/
 │   ├── neutral/
 │   ├── happy/
@@ -119,7 +124,30 @@ dataset/AffectNet/
 └── Test/
 ```
 
-> **Nota**: Os diretórios `dataset/` não são versionados no Git devido ao tamanho dos arquivos. Você precisará baixar os datasets separadamente.
+> **Nota**: O treinamento usa `labels.csv` como fonte oficial de ground truth (com filtro de confiança via `--min_confidence`). Se o CSV não existir, o script usa as labels por pasta como fallback.
+
+### Download Automático dos Datasets
+
+Os diretórios `dataset/` não são versionados no Git devido ao tamanho dos arquivos. Use o script `download_datasets.py` para baixar e preparar automaticamente todos os datasets via Kaggle API:
+
+```bash
+# Baixar todos os datasets (RWF-2000 + UCF101 + AffectNet)
+python download_datasets.py --all
+
+# Baixar apenas um dataset
+python download_datasets.py --rwf2000
+python download_datasets.py --ucf101       # Filtra automaticamente para 9 classes
+python download_datasets.py --affectnet
+
+# Apenas filtrar um UCF101 já existente para as 9 classes relevantes
+python download_datasets.py --filter-ucf101
+```
+
+**Recursos do script:**
+- Download com barra de progresso e retomada (pula arquivos já existentes)
+- Extração robusta de ZIPs: corrige nomes em UTF-8/Cirílico (ex.: vídeos do RWF-2000), evita path traversal e trunca nomes muito longos
+- Reorganiza o AffectNet automaticamente para a estrutura esperada
+- Filtra o UCF101 mantendo apenas as 9 classes relevantes (remove diretórios e filtra os CSVs)
 
 ## Arquitetura dos Modelos
 
@@ -172,15 +200,43 @@ Modelos 3D para reconhecimento de ações em vídeo:
 
 ### 3. EmotionNet (Reconhecimento de Emoções)
 
-Modelo CNN para classificação de emoções faciais:
+Modelo baseado em **DeiT-Small** (Data-efficient Image Transformer) para classificação de emoções faciais:
 
-- Base: ResNet-18 adaptado
-- Input: Face extraída e redimensionada (224×224)
-- Output: 8 classes de emoção (probabilidades)
-- Treinado em: AffectNet
+```
+┌───────────────────┐
+│  Face extraída    │ (224×224, RGB)
+└─────────┬─────────┘
+          ▼
+┌─────────────────────────┐
+│   DeiT-Small Backbone   │ (Vision Transformer pré-treinado no ImageNet)
+│   22M params, embed=384 │ → 384 dims por face
+│   depth=12, heads=6     │
+└─────────┬───────────────┘
+          ▼
+┌─────────────────────────┐
+│   Classifier (2-layer)  │ Linear(384→128) → ReLU → Linear(128→8)
+└─────────┬───────────────┘
+          ▼
+┌─────────────────────────┐
+│   Output: 8 emoções     │ (probabilidades)
+└─────────────────────────┘
+```
+
+**Componentes:**
+- Backbone: DeiT-Small (`deit_small_patch16_224`) pré-treinada no ImageNet, via `timm` (384 dims, 12 camadas, 6 heads, patch 16)
+- Classifier: `Linear(384 → 128) → ReLU → Linear(128 → 8)` com Dropout(0.3)
+- Treinado em: AffectNet (via `train_emotion_model.py`)
+
+**Técnicas de treinamento:**
+- **Focal Loss** (γ configurável) para lidar com desbalanceamento de classes
+- **WeightedRandomSampler** para balancear os batches
+- **AdamW** com warmup linear + cosine annealing
+- **Mixed precision (AMP)**, gradient clipping e early stopping
+- Filtro de qualidade dos labels via `labels.csv` (`--min_confidence`)
+- Suporte a `--resume` para retomar treino do último checkpoint
 
 **Classes de Emoção:**
-- Neutral, Happy, Sad, Angry, Fearful, Disgust, Surprise, Contempt
+- Neutral, Happy, Sad, Anger, Fear, Disgust, Surprise, Contempt
 
 ### 4. MultimodalRiskDetector (Modelo Principal)
 
@@ -207,8 +263,8 @@ Arquitetura multimodal que combina todas as modalidades:
                     │  (Early/Late/   │
                     │   Attention)    │
                     └────────┬────────┘
-                              │
-                              ▼
+                             │
+                             ▼
                     ┌─────────────────┐
                     │  Classifier     │
                     │  (Binary)       │
@@ -237,8 +293,8 @@ Arquitetura multimodal que combina todas as modalidades:
 
 1. **Clone o repositório:**
    ```bash
-   git clone https://github.com/adrianalima99/cv-security-threat-detection.git
-   cd cv-security-threat-detection
+   git clone https://github.com/murilo-rolo/vc-seguranca.git
+   cd vc-seguranca
    ```
 
 2. **Crie um ambiente virtual (recomendado):**
@@ -259,20 +315,24 @@ Arquitetura multimodal que combina todas as modalidades:
    > **Nota para Python 3.14:** Use `--prefer-binary` para garantir instalação de wheels pré-compilados e evitar erros de compilação.
 
 4. **Baixe os datasets necessários:**
+
+   O projeto inclui o script `download_datasets.py`, que baixa e prepara automaticamente todos os datasets:
    
-   **RWF-2000 (Obrigatório - Dataset Principal):**
-   - Baixe de uma fonte confiável (Kaggle, GitHub, etc.)
-   - Extraia na pasta `dataset/RWF-2000/` seguindo a estrutura mencionada acima
+   ```bash
+   # RWF-2000 (obrigatório - dataset principal)
+   python download_datasets.py --rwf2000
    
-   **UCF101 (Opcional - Para pré-treinamento CNN 3D):**
-   - Baixe o dataset UCF101 completo
-   - O projeto já está configurado para usar apenas 9 classes relevantes
-   - Extraia na pasta `dataset/UCF101/`
+   # UCF101 (opcional - para pré-treinamento CNN 3D)
+   python download_datasets.py --ucf101
    
-   **AffectNet (Opcional - Para treinar EmotionNet):**
-   - Baixe o dataset AffectNet
-   - Extraia na pasta `dataset/AffectNet/`
-   - Necessário apenas se quiser treinar o modelo de emoção do zero
+   # AffectNet (opcional - para treinar o EmotionNet)
+   python download_datasets.py --affectnet
+   
+   # Ou baixe tudo de uma vez
+   python download_datasets.py --all
+   ```
+   
+   > **Alternativa manual:** baixe os datasets de uma fonte confiável (Kaggle, GitHub, etc.) e extraia em `dataset/` seguindo a estrutura mencionada acima.
 
 ## Uso
 
@@ -312,20 +372,28 @@ python run_pose_preprocessing.py --dataset rwf2000 --num_frames 16
 ```
 
 **Opções:**
-- `--dataset`: `rwf2000`, `ucf101` ou `both`
-- `--num_frames`: Número de frames a processar por vídeo
+- `--dataset`: `rwf2000`, `ucf101` ou `both` (padrão: `both`)
+- `--num_frames`: Número de frames a processar por vídeo (None = todos)
+- `--min_detection_confidence`: Confiança mínima de detecção (padrão 0.5; 0.5-0.7 recomendado)
+- `--min_tracking_confidence`: Confiança mínima de rastreamento (padrão 0.5)
+- `--model_complexity`: `0` (Lite), `1` (Full, padrão) ou `2` (Heavy)
 
 #### Passo 4: Extrair emoções faciais
 
-Extrai vetores de emoção usando EmotionNet:
+Extrai vetores de emoção usando EmotionNet (DeiT-Small):
 
 ```bash
 # Primeiro, treine o modelo de emoção (se ainda não tiver)
-python train_emotion_model.py --dataset_path dataset/AffectNet --epochs 50
+python train_emotion_model.py --epochs 60
 
 # Depois, extraia emoções do RWF-2000
-python run_emotion_preprocessing.py --dataset rwf2000 --model_path models/emotion/best_model.pth
+python run_emotion_preprocessing.py --dataset rwf2000 --model_path models/emotion_cnn/weights/best_model.pth
 ```
+
+**Opções adicionais:**
+- `--face_detector`: `mtcnn` (padrão), `retinaface` ou `haar`
+- `--aggregation`: `mean` (padrão) ou `max` (agregação temporal)
+- `--num_frames`: Número de frames por vídeo (None = todos)
 
 **Configuração customizada:**
 
@@ -360,22 +428,31 @@ python -m src.training.train \
     --dropout 0.5
 ```
 
-**Treinamento rápido para teste:**
-```bash
-python tools/train_quick_test.py
-```
-
 #### 2.2. Treinamento EmotionNet
 
-Treina o modelo de reconhecimento de emoções no AffectNet:
+Treina o modelo de reconhecimento de emoções (DeiT-Small) no AffectNet:
 
 ```bash
 python train_emotion_model.py \
-    --dataset_path dataset/AffectNet \
-    --epochs 50 \
+    --epochs 60 \
     --batch_size 32 \
-    --learning_rate 1e-4
+    --learning_rate 1e-5
 ```
+
+**Opções principais:**
+- `--epochs`: Número de épocas (padrão: 60)
+- `--batch_size`: Tamanho do batch (padrão: 32)
+- `--learning_rate`: Learning rate (padrão: 1e-5)
+- `--min_confidence`: Confiança mínima do label no `labels.csv` (padrão: 0.7; `0.0` usa todos)
+- `--focal-gamma`: Gamma da Focal Loss (padrão: 2)
+- `--weight_decay`: Weight decay do AdamW (padrão: 0.05)
+- `--warmup_epochs`: Épocas de warmup linear (padrão: 5)
+- `--grad-clip`: Gradient clipping max norm (padrão: 1.0; `0` desativa)
+- `--sampler` / `--no-sampler`: Ativa/desativa o WeightedRandomSampler
+- `--resume`: Retoma o treino a partir do último `best_model.pth`
+- `--amp` / `--no-amp`: Ativa/desativa mixed precision
+
+O dataset AffectNet é localizado automaticamente em `dataset/AffectNet`. O modelo é salvo em `models/emotion_cnn/weights/best_model.pth`.
 
 #### 2.3. Treinamento CNN 3D
 
@@ -385,7 +462,6 @@ Pipeline de duas etapas: pré-treinamento + fine-tuning:
 ```bash
 python train_cnn3d.py \
     --stage pretrain \
-    --dataset ucf101 \
     --epochs 50 \
     --batch_size 8 \
     --model_name r2plus1d_18
@@ -395,11 +471,20 @@ python train_cnn3d.py \
 ```bash
 python train_cnn3d.py \
     --stage finetune \
-    --dataset rwf2000 \
-    --pretrained_path results/cnn3d/ucf101/best_model.pth \
+    --pretrained_path models/cnn3d/weights/ucf101/best_model.pth \
     --epochs 30 \
     --batch_size 8
 ```
+
+**Opções principais:**
+- `--stage`: `pretrain`, `finetune` ou `both` (obrigatório)
+- `--model_name`: `r3d_18`, `r2plus1d_18` (padrão) ou `mc3_18`
+- `--pretrained`: Usar pesos pré-treinados do Kinetics400 (apenas no pretrain)
+- `--pretrained_path`: Caminho para checkpoint UCF101 (para finetune)
+- `--freeze_backbone`: Congela o backbone durante o fine-tuning
+- `--clip_size`: Tamanho do clipe H W (padrão: `112 112`)
+
+Os pesos são salvos em `models/cnn3d/weights/ucf101/best_model.pth` (pretrain) e `models/cnn3d/weights/rwf2000/best_model.pth` (fine-tuning).
 
 #### 2.4. Treinamento Multimodal (Modelo Principal)
 
@@ -411,15 +496,16 @@ python train_multimodal.py \
     --batch_size 8 \
     --fusion_method late \
     --use_temporal_modeling \
-    --video_model_path results/models/best_model.pth \
-    --emotion_model_path models/emotion/best_model.pth
+    --video_model_path models/resnet_lstm/weights/best_model.pth
 ```
 
 **Parâmetros principais:**
 - `--fusion_method`: `early`, `late` (recomendado) ou `attention`
 - `--use_temporal_modeling`: Usa LSTM para modelagem temporal por modalidade
-- `--video_model_path`: Caminho para modelo ResNet-LSTM pré-treinado
-- `--emotion_model_path`: Caminho para modelo EmotionNet pré-treinado (não usado atualmente, o modelo multimodal não carrega EmotionNet separadamente)
+- `--video_model_path`: Caminho para modelo ResNet-LSTM pré-treinado (opcional; usado apenas para extrair features de vídeo)
+- `--window_size`: Tamanho da janela temporal (padrão: 16)
+
+O modelo é salvo em `models/multimodal/weights/best_model.pth`.
 
 #### Parâmetros Principais
 
@@ -441,32 +527,73 @@ python train_multimodal.py \
 - Use `--num_epochs 10` para testes rápidos
 - Use `--device cpu` se tiver problemas com GPU
 
-O melhor modelo será salvo automaticamente em `results/models/best_model.pth`.
+O melhor modelo será salvo automaticamente em `models/resnet_lstm/weights/best_model.pth`.
 
 ### 3. Avaliação
 
-Avalie os modelos treinados no conjunto de teste:
+O script `run_evaluation.py` executa um pipeline completo de experimentos de avaliação. O tipo de modelo é selecionado com `--model`:
 
-#### 3.1. Avaliação de Modelo Unimodal
+#### 3.1. Avaliação de Modelo Unimodal (ResNet-LSTM)
 
 ```bash
 python run_evaluation.py \
-    --model_path results/models/best_model.pth \
-    --batch_size 8
+    --model baseline \
+    --model_path models/resnet_lstm/weights/best_model.pth
 ```
 
 #### 3.2. Avaliação de Modelo Multimodal
 
 ```bash
 python run_evaluation.py \
-    --model_path results/multimodal/best_model.pth \
-    --model_type multimodal \
-    --batch_size 8
+    --model multimodal \
+    --model_path models/multimodal/weights/best_model.pth
 ```
 
-Os relatórios serão salvos em:
-- `results/reports/metrics.txt` (formato texto)
-- `results/reports/metrics.json` (formato JSON)
+#### 3.3. Experimentos de Avaliação
+
+Além das métricas básicas, o script pode executar outros experimentos:
+
+```bash
+# Executar todos os experimentos
+python run_evaluation.py \
+    --model multimodal \
+    --model_path models/multimodal/weights/best_model.pth \
+    --all
+
+# Executar experimentos específicos
+python run_evaluation.py --model baseline --model_path <modelo> --metrics
+python run_evaluation.py --model baseline --model_path <modelo> --robustness
+python run_evaluation.py --model baseline --model_path <modelo> --performance
+python run_evaluation.py --model baseline --model_path <modelo> --limitations
+```
+
+**Parâmetros:**
+- `--model`: `baseline` ou `multimodal` (obrigatório)
+- `--model_path`: Caminho para checkpoint do modelo (obrigatório)
+- `--metrics`: Métricas básicas (padrão se nenhum experimento for especificado)
+- `--robustness`: Testa robustez a distorções (blur, ruído, baixa iluminação, oclusão, variação de resolução)
+- `--performance`: Mede FPS, latência e uso de recursos
+- `--limitations`: Analisa falsos positivos, falsos negativos e casos limítrofes
+- `--experiment_name`: Nome do experimento (padrão: tipo do modelo)
+
+Os resultados são salvos em `results/experiments/<experiment_name>/`, incluindo:
+- `metrics/` — relatórios de métricas, curvas ROC e PR
+- `robustness/` — resultados por distorção e intensidade
+- `performance/` — benchmarks de FPS/latência
+- `limitations/` — exemplos de erros com imagens
+- `evaluation_summary.json` — resumo geral
+
+### 3.4. Comparação Baseline vs Multimodal
+
+O script `compare_baseline_multimodal.py` avalia ambos os modelos no mesmo conjunto de teste e compara as métricas:
+
+```bash
+python compare_baseline_multimodal.py \
+    --baseline_model_path models/resnet_lstm/weights/best_model.pth \
+    --multimodal_model_path models/multimodal/weights/best_model.pth
+```
+
+O resultado da comparação (incluindo a melhoria de accuracy e F1) é salvo em `results/comparison/comparison.json`.
 
 ### 4. Métricas de Avaliação
 
@@ -486,9 +613,9 @@ Execute detecção de violência em tempo real usando webcam ou stream RTSP:
 
 ```bash
 python run_realtime_risk_detection.py \
-    --multimodal_model results/multimodal/best_model.pth \
-    --video_model results/models/best_model.pth \
-    --emotion_model models/emotion/best_model.pth \
+    --multimodal_model models/multimodal/weights/best_model.pth \
+    --video_model models/resnet_lstm/weights/best_model.pth \
+    --emotion_model models/emotion_cnn/weights/best_model.pth \
     --source 0 \
     --risk_threshold 0.8 \
     --consecutive_windows 3
@@ -498,8 +625,13 @@ python run_realtime_risk_detection.py \
 - `--source`: `0` para webcam ou URL RTSP (ex: `rtsp://...`)
 - `--risk_threshold`: Threshold de probabilidade para alerta (0.0-1.0)
 - `--consecutive_windows`: Número de janelas consecutivas acima do threshold para alerta
+- `--window_size`: Tamanho da janela temporal (padrão: 16)
+- `--overlap`: Sobreposição entre janelas (padrão: 8)
+- `--frame_size`: Tamanho dos frames para processamento H W (padrão: `224 224`)
 - `--use_cnn3d`: Usar CNN 3D ao invés de ResNet-LSTM para vídeo
 - `--cnn3d_model`: Caminho para modelo CNN 3D (se usar `--use_cnn3d`)
+- `--no_display`: Não exibir o vídeo (apenas processar)
+- `--device`: Device para inferência (`cuda`/`cpu`)
 
 ## Estrutura de Dados
 
@@ -508,7 +640,7 @@ O projeto utiliza uma estrutura padronizada para organizar dados brutos e proces
 ### Estrutura Completa de Diretórios
 
 ```
-cv-security-threat-detection/
+vc-seguranca/
 ├── dataset/                           # Datasets originais (não versionados)
 │   ├── RWF-2000/                      # Dataset principal (violência CCTV)
 │   │   ├── train/
@@ -598,38 +730,40 @@ cv-security-threat-detection/
 **Emoção:**
 - **Estrutura**: `data/emotion/rwf2000/{split}/{violent|non_violent}/<video_id>.npy`
 - **Formato**: Array NumPy com shape `(num_frames, 8)`
-  - 8 classes: [neutral, happy, sad, angry, fearful, disgust, surprise, contempt]
+  - 8 classes: [neutral, happy, sad, anger, fear, disgust, surprise, contempt]
   - Valores: Probabilidades normalizadas (soma = 1.0)
 - **Exemplo**: `data/emotion/rwf2000/train/violent/video_0001.npy`
-
-### Validação da Estrutura
-
-Para validar se sua estrutura de dados está correta, use o script de validação:
-
-```bash
-python tools/validate_data_structure.py
-```
-
-Este script verifica:
-- ✅ Existência de diretórios obrigatórios
-- ✅ Estrutura de pastas correta
-- ✅ Correspondência entre modalidades (vídeo, pose, emoção)
-- ✅ Formato e shape dos arquivos .npy
-- ✅ Consistência de IDs de vídeo entre modalidades
 
 ## Estrutura do Projeto
 
 ```
-cv-security-threat-detection/
+vc-seguranca/
 ├── dataset/                    # Datasets (não versionados)
 │   ├── RWF-2000/              # Dataset principal (violência CCTV)
 │   ├── UCF101/                # Dataset de pré-treinamento (9 classes)
-│   └── AffectNet/             # Dataset de emoções (8 classes)
+│   └── AffectNet/             # Dataset de emoções (8 classes) + labels.csv
 ├── data/                      # Dados processados
 │   ├── raw/                   # Vídeos organizados
 │   ├── processed/             # Frames extraídos
 │   ├── pose/                  # Keypoints de pose
 │   └── emotion/               # Vetores de emoção
+├── models/                    # Modelos treinados (pesos + experimentos)
+│   ├── resnet_lstm/           # ResNet-18 + LSTM
+│   │   ├── weights/           # best_model.pth
+│   │   └── experiments/       # Logs e métricas de treinamento
+│   ├── emotion_cnn/           # EmotionNet (DeiT-Small)
+│   │   ├── weights/           # best_model.pth, confusion_matrix.npy
+│   │   └── experiments/       # training_history.json, confusion_matrix.png
+│   ├── cnn3d/                 # CNN 3D (R3D, R(2+1)D, MC3)
+│   │   ├── weights/
+│   │   │   ├── ucf101/        # Pesos do pré-treinamento
+│   │   │   └── rwf2000/       # Pesos do fine-tuning
+│   │   └── experiments/
+│   │       ├── ucf101/
+│   │       └── rwf2000/
+│   └── multimodal/            # MultimodalRiskDetector
+│       ├── weights/
+│       └── experiments/
 ├── src/
 │   ├── paths.py                # Gerenciamento centralizado de caminhos
 │   ├── preprocessing/          # Pré-processamento
@@ -648,36 +782,32 @@ cv-security-threat-detection/
 │   ├── models/                # Modelos de Deep Learning
 │   │   ├── resnet_lstm.py     # ResNet-LSTM
 │   │   ├── cnn3d_risk.py      # CNN 3D
-│   │   ├── emotion_cnn.py     # EmotionNet
-│   │   └── multimodal_risk.py # MultimodalRiskDetector
+│   │   ├── emotion_cnn.py     # EmotionNet (DeiT-Small)
+│   │   ├── multimodal_risk.py # MultimodalRiskDetector
+│   │   └── losses.py          # Focal Loss
 │   ├── training/              # Scripts de treinamento
 │   │   ├── train.py           # Treinamento ResNet-LSTM
 │   │   └── utils.py           # Funções compartilhadas (run_epoch, dataloader, etc.)
-│   ├── evaluation/             # Avaliação
-│   │   ├── evaluate.py
-│   │   ├── metrics.py
-│   │   ├── ablation_study.py
-│   │   └── robustness_eval.py
-│   └── inference/              # Inferência
+│   ├── evaluation/            # Avaliação experimental
+│   │   ├── metrics.py         # Métricas básicas (acc, precision, AUC-ROC, PR)
+│   │   ├── robustness_eval.py # Robustez a distorções
+│   │   ├── performance_eval.py# Performance (FPS, latência)
+│   │   ├── limitations_analysis.py # FPs, FNs, casos limítrofes
+│   │   ├── ablation_study.py  # Estudo de ablação
+│   │   └── utils.py           # Aplicação de distorções e utilitários
+│   └── inference/             # Inferência
 │       ├── realtime_risk_detector.py
 │       └── multi_camera_detector.py
 ├── examples/                  # Scripts de exemplo
 │   ├── example_usage.py
 │   ├── example_cnn3d_usage.py
 │   └── ... (outros exemplos)
-├── tools/                     # Scripts utilitários
-│   ├── filter_ucf101_classes.py
-│   ├── validate_data_structure.py
-│   └── ... (outros utilitários)
-├── docs/                      # Documentação adicional
-│   └── ANALISE_COMPLETA_PROJETO.md
-├── results/                   # Resultados
-│   ├── models/                # Modelos treinados
-│   ├── multimodal/            # Modelos multimodais
-│   ├── cnn3d/                 # Modelos CNN 3D
-│   ├── emotion/               # Modelos de emoção
+├── results/                   # Resultados de experimentos
+│   ├── experiments/           # Resultados do run_evaluation.py
+│   ├── comparison/            # Comparação baseline vs multimodal
 │   └── reports/               # Relatórios
-├── local_docs/                # Documentação técnica detalhada
+├── download_datasets.py       # Download dos datasets (Kaggle API)
+├── compare_baseline_multimodal.py  # Comparação baseline vs multimodal
 ├── train_*.py                 # Scripts de treinamento (raiz)
 ├── run_*.py                   # Scripts de execução (raiz)
 ├── requirements.txt           # Dependências
@@ -705,6 +835,7 @@ cv-security-threat-detection/
 
 - `torch>=2.0.0` - Framework de Deep Learning
 - `torchvision>=0.15.0` - Modelos pré-treinados e transformações
+- `timm>=1.0.0` - Modelos Vision Transformer (backbone do EmotionNet)
 - `opencv-python>=4.8.0` - Processamento de vídeo
 - `numpy>=2.4.0` - Operações numéricas (Python 3.14 requer >=2.4.0)
 - `scikit-learn>=1.3.0` - Métricas de avaliação
@@ -745,6 +876,9 @@ cv-security-threat-detection/
 - Certifique-se de que o ambiente virtual está ativado
 - Reinstale as dependências: `pip install -r requirements.txt`
 
+**7. Erro ao criar o EmotionNet (módulo `timm` ausente)**
+- O EmotionNet usa DeiT-Small via `timm`; instale com `pip install timm>=1.0.0`
+- Na primeira execução o backbone DeiT-Small baixa os pesos do ImageNet automaticamente
 
 ## Pipeline Completo de Execução
 
@@ -762,11 +896,19 @@ python train_pipeline.py --base_models
 # Treinar apenas multimodal (assumindo modelos base já existem)
 python train_pipeline.py --multimodal
 
+# Treinar apenas um modelo específico
+python train_pipeline.py --resnet_lstm
+python train_pipeline.py --emotion
+python train_pipeline.py --cnn3d
+
 # Treinar com opções customizadas
 python train_pipeline.py --all --skip_emotion --skip_cnn3d --epochs 30 --batch_size 4
 
 # Forçar retreinamento mesmo se modelos já existirem
 python train_pipeline.py --all --force_retrain
+
+# Caminhos customizados de datasets
+python train_pipeline.py --all --affectnet_path /caminho/AffectNet --ucf101_path /caminho/UCF101
 ```
 
 **Vantagens do script master:**
@@ -782,18 +924,15 @@ Se preferir executar manualmente:
 
 1. **Pré-processamento de Dados**
    ```bash
-   # 1. Organizar vídeos
+   # 1. Organizar vídeos e extrair frames
    python run_preprocessing.py
    
-   # 2. Extrair frames
-   # (já incluído no passo 1)
-   
-   # 3. Extrair pose
+   # 2. Extrair pose
    python run_pose_preprocessing.py --dataset rwf2000
    
-   # 4. Treinar EmotionNet e extrair emoções
-   python train_emotion_model.py --dataset_path dataset/AffectNet
-   python run_emotion_preprocessing.py --dataset rwf2000 --model_path models/emotion/best_model.pth
+   # 3. Treinar EmotionNet e extrair emoções
+   python train_emotion_model.py
+   python run_emotion_preprocessing.py --dataset rwf2000 --model_path models/emotion_cnn/weights/best_model.pth
    ```
 
 2. **Treinamento de Modelos Base**
@@ -802,11 +941,11 @@ Se preferir executar manualmente:
    python -m src.training.train --epochs 50
    
    # 2. Treinar EmotionNet (se ainda não tiver)
-   python train_emotion_model.py --dataset_path dataset/AffectNet
+   python train_emotion_model.py
    
    # 3. (Opcional) Pré-treinar CNN 3D em UCF101
-   python train_cnn3d.py --stage pretrain --dataset ucf101
-   python train_cnn3d.py --stage finetune --dataset rwf2000
+   python train_cnn3d.py --stage pretrain
+   python train_cnn3d.py --stage finetune --pretrained_path models/cnn3d/weights/ucf101/best_model.pth
    ```
 
 3. **Treinamento Multimodal**
@@ -814,22 +953,22 @@ Se preferir executar manualmente:
    python train_multimodal.py \
        --epochs 50 \
        --fusion_method late \
-       --video_model_path results/models/best_model.pth \
-       --emotion_model_path models/emotion/best_model.pth
+       --video_model_path models/resnet_lstm/weights/best_model.pth
    ```
 
 4. **Avaliação**
    ```bash
    python run_evaluation.py \
-       --model_path results/multimodal/best_model.pth
+       --model multimodal \
+       --model_path models/multimodal/weights/best_model.pth
    ```
 
 5. **Inferência em Tempo Real**
    ```bash
    python run_realtime_risk_detection.py \
-       --multimodal_model results/multimodal/best_model.pth \
-       --video_model results/models/best_model.pth \
-       --emotion_model models/emotion/best_model.pth
+       --multimodal_model models/multimodal/weights/best_model.pth \
+       --video_model models/resnet_lstm/weights/best_model.pth \
+       --emotion_model models/emotion_cnn/weights/best_model.pth
    ```
 
 ### Ordem de Execução Recomendada
@@ -853,6 +992,8 @@ Se preferir executar manualmente:
 - **ResNet**: Deep Residual Learning for Image Recognition (He et al., 2015)
 - **LSTM**: Long Short-Term Memory (Hochreiter & Schmidhuber, 1997)
 - **R(2+1)D**: A Closer Look at Spatiotemporal Convolutions (Tran et al., 2018)
+- **DeiT**: Training Data-efficient Image Transformers & Distillation through Attention (Touvron et al., 2021)
+- **Focal Loss**: Focal Loss for Dense Object Detection (Lin et al., 2017)
 - **MediaPipe**: Framework de ML para detecção de pose
 
 ### Ferramentas
