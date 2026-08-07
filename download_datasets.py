@@ -110,7 +110,7 @@ def download_rwf2000() -> bool:
     print("="*60)
     
     url = "https://www.kaggle.com/api/v1/datasets/download/vulamnguyen/rwf2000"
-    zip_path = p.PROJECT_ROOT / "rwf2000.zip"
+    zip_path = p.DATASET_ROOT / "rwf2000.zip"
     
     if not download_file(url, zip_path, "RWF-2000 Dataset"):
         return False
@@ -130,7 +130,7 @@ def download_ucf101(filter_classes: bool = True) -> bool:
     print("="*60)
     
     url = "https://www.kaggle.com/api/v1/datasets/download/matthewjansen/ucf101-action-recognition"
-    zip_path = p.PROJECT_ROOT / "ucf101-action-recognition.zip"
+    zip_path = p.DATASET_ROOT / "ucf101-action-recognition.zip"
     
     if not download_file(url, zip_path, "UCF101 Action Recognition"):
         return False
@@ -156,7 +156,7 @@ def download_affectnet() -> bool:
     print("="*60)
     
     url = "https://www.kaggle.com/api/v1/datasets/download/mstjebashazida/affectnet"
-    zip_path = p.PROJECT_ROOT / "affectnet.zip"
+    zip_path = p.DATASET_ROOT / "affectnet.zip"
     
     if not download_file(url, zip_path, "AffectNet Dataset"):
         return False
