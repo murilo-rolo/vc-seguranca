@@ -11,7 +11,7 @@ else:
     PROJECT_ROOT = Path(__file__).resolve().parent.parent
     DATASET_ROOT = PROJECT_ROOT / "dataset"
 
-DATA_ROOT         = PROJECT_ROOT / "data"
+DATA_ROOT         = DATASET_ROOT / "data"
 RAW_DATA_ROOT     = DATA_ROOT / "raw"
 PROCESSED_ROOT    = DATA_ROOT / "processed"
 POSE_ROOT         = DATA_ROOT / "pose"
