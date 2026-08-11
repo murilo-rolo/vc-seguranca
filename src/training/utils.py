@@ -79,12 +79,21 @@ def run_epoch(
                 loss = criterion(outputs, labels)
 
             if is_train:
-                scaler.scale(loss).backward()
+                if scaler is not None:
+                    scaler.scale(loss).backward()
+                else:
+                    loss.backward()
+
                 if grad_clip is not None and grad_clip > 0:
-                    scaler.unscale_(optimizer)
+                    if scaler is not None:
+                        scaler.unscale_(optimizer)
                     torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
-                scaler.step(optimizer)
-                scaler.update()
+
+                if scaler is not None:
+                    scaler.step(optimizer)
+                    scaler.update()
+                else:
+                    optimizer.step()
 
             running_loss += loss.item()
             _, predicted = outputs.max(1)
