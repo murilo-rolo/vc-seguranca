@@ -89,9 +89,9 @@ class EmotionSequenceDataset(Dataset):
                 sample_data = np.load(first_file)
                 self.num_emotions = sample_data.shape[1] if len(sample_data.shape) > 1 else sample_data.shape[0]
             except:
-                self.num_emotions = 8  # Padrão para AffectNet
+                self.num_emotions = 128  # Padrão para embeddings 128-d
         else:
-            self.num_emotions = 8
+            self.num_emotions = 128
         
         print(f"EmotionSequenceDataset {split}: {len(self.samples)} amostras carregadas")
         print(f"  Número de emoções: {self.num_emotions}")

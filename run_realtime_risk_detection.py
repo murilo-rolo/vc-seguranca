@@ -15,12 +15,16 @@ Uso:
     # RTSP
     python run_realtime_risk_detection.py --multimodal_model results/multimodal/best_model.pth --source rtsp://...
     
-    # Com CNN 3D
-    python run_realtime_risk_detection.py --multimodal_model results/multimodal/best_model.pth --use_cnn3d --cnn3d_model results/cnn3d/rwf2000/best_model.pth
+    # Com CNN 3D (padrão)
+    python run_realtime_risk_detection.py --multimodal_model results/multimodal/best_model.pth
+
+    # Com ResNet-LSTM (alternativo)
+    python run_realtime_risk_detection.py --multimodal_model results/multimodal/best_model.pth --video_backbone resnet_lstm --video_model results/resnet_lstm/best_model.pth
 """
 
 import argparse
 import torch
+from src import paths as p
 from src.inference.realtime_risk_detector import create_realtime_detector
 
 
@@ -37,10 +41,17 @@ def main():
         help="Caminho para modelo multimodal treinado"
     )
     parser.add_argument(
+        "--video_backbone",
+        type=str,
+        choices=["cnn3d", "resnet_lstm"],
+        default="cnn3d",
+        help="Backbone de vídeo: cnn3d (padrão) ou resnet_lstm"
+    )
+    parser.add_argument(
         "--video_model",
         type=str,
         default=None,
-        help="Caminho para modelo de vídeo (ResNet-LSTM) - opcional se usar CNN 3D"
+        help="Caminho para modelo de vídeo (ResNet-LSTM) - usado se --video_backbone resnet_lstm"
     )
     parser.add_argument(
         "--emotion_model",
@@ -49,15 +60,10 @@ def main():
         help="Caminho para modelo de emoção - opcional"
     )
     parser.add_argument(
-        "--use_cnn3d",
-        action="store_true",
-        help="Usar CNN 3D ao invés de ResNet-LSTM para vídeo"
-    )
-    parser.add_argument(
         "--cnn3d_model",
         type=str,
         default=None,
-        help="Caminho para modelo CNN 3D (requerido se --use_cnn3d)"
+        help="Caminho para modelo CNN 3D (padrão: models/cnn3d/weights/rwf2000/best_model.pth)"
     )
     
     # Fonte de vídeo
@@ -87,6 +93,13 @@ def main():
         nargs=2,
         default=[224, 224],
         help="Tamanho dos frames para processamento (H W) - padrão: 224 224"
+    )
+    parser.add_argument(
+        "--face_aggregation",
+        type=str,
+        choices=["mean", "max"],
+        default="mean",
+        help="Como agregar TODAS as faces detectadas em um frame em um único embedding (padrão: mean)"
     )
     
     # Alertas
@@ -121,10 +134,10 @@ def main():
     args = parser.parse_args()
     
     # Validações
-    if args.use_cnn3d and not args.cnn3d_model:
-        parser.error("--cnn3d_model é obrigatório quando --use_cnn3d é usado")
+    if args.video_backbone == "cnn3d" and not args.cnn3d_model:
+        args.cnn3d_model = str(p.CNN3D_RWF2000_WEIGHTS / "best_model.pth")
     
-    if not args.use_cnn3d and not args.video_model:
+    if args.video_backbone == "resnet_lstm" and not args.video_model:
         print("⚠ Aviso: --video_model não fornecido. Usando modelo ResNet-LSTM sem checkpoint.")
     
     print("=" * 60)
@@ -132,7 +145,7 @@ def main():
     print("=" * 60)
     print(f"Fonte de vídeo: {args.source}")
     print(f"Modelo multimodal: {args.multimodal_model}")
-    print(f"Backbone de vídeo: {'CNN 3D' if args.use_cnn3d else 'ResNet-LSTM'}")
+    print(f"Backbone de vídeo: {'CNN 3D (padrão)' if args.video_backbone == 'cnn3d' else 'ResNet-LSTM'}")
     print(f"Janela temporal: {args.window_size} frames")
     print(f"Sobreposição: {args.overlap} frames")
     print(f"Threshold de risco: {args.risk_threshold}")
@@ -151,8 +164,9 @@ def main():
             window_size=args.window_size,
             risk_threshold=args.risk_threshold,
             consecutive_windows=args.consecutive_windows,
-            use_cnn3d=args.use_cnn3d,
+            use_cnn3d=args.video_backbone == "cnn3d",
             cnn3d_model_path=args.cnn3d_model,
+            face_aggregation=args.face_aggregation,
             device=args.device
         )
     except Exception as e:

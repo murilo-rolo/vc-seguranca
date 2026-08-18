@@ -16,9 +16,9 @@ multimodal/
 
 ## Modalidades
 
-- **Video Features**: ResNet-LSTM (extração de features de vídeo)
-- **Pose Features**: Keypoints de pose (MediaPipe)
-- **Emotion Features**: Vetores de emoção facial
+- **Video Features**: CNN 3D R2Plus1D (512 dims, **padrão**) ou ResNet-LSTM (256 dims) — token de consulta
+- **Pose Features**: Keypoints de pose (MediaPipe, 99 dims por frame)
+- **Emotion Features**: Embeddings de 128 dims (penúltima camada do EmotionNet) — não mais probabilidades de 8 classes. Por frame, **todas** as faces detectadas são agregadas em um único embedding (mean/max, `--face_aggregation`); sem faces → embedding neutro
 
 ## Dataset Utilizado
 
@@ -32,16 +32,20 @@ multimodal/
 ## Treinamento
 
 ```bash
-python train_multimodal.py --epochs 50 --fusion_method late --batch_size 8
+# Backbone de vídeo padrão: CNN 3D (models/cnn3d/weights/rwf2000/best_model.pth)
+python train_multimodal.py --epochs 50 --batch_size 8
+
+# Alternativa: ResNet-LSTM como backbone de vídeo
+python train_multimodal.py --epochs 50 --batch_size 8 --video_backbone resnet_lstm --video_model_path models/resnet_lstm/weights/best_model.pth
 ```
 
-## Métodos de Fusão
+## Método de Fusão
 
-- **Early Fusion**: Concatena features brutas antes do processamento
-- **Late Fusion**: Processa cada modalidade separadamente e funde no final
-- **Attention Fusion**: Fusão com mecanismo de atenção
+- **Cross-Attention** (único): Vídeo (query) atende às memórias de pose + emoção via Multi-Head Attention (3 heads). Fusion `early`/`late` foram removidos — `fusion_method` aceita apenas `cross_attention`.
+
+O checkpoint salva `fusion_method`, `emotion_feature_dim` (128), `video_backbone` e `video_feature_dim` (512/256); a inferência e a avaliação leem esses valores automaticamente.
 
 ## Pré-requisitos
 
-1. Modelo ResNet-LSTM treinado (`models/resnet_lstm/weights/best_model.pth`)
-2. Dados de pose e emoção processados
+1. Backbone de vídeo treinado — CNN 3D por padrão (`models/cnn3d/weights/rwf2000/best_model.pth`; use `--video_backbone resnet_lstm` para ResNet-LSTM, `models/resnet_lstm/weights/best_model.pth`)
+2. Dados de pose e emoção processados (emoção em formato `T × 128`)

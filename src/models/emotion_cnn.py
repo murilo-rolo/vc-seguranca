@@ -90,6 +90,22 @@ class EmotionNet(nn.Module):
         logits = self.classifier(features) # (B, num_emotions)
         return logits
     
+    def extract_features(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Extrai embeddings da penúltima camada do classificador (B, 128).
+
+        Args:
+            x: Tensor de entrada (B, 3, H, W) - faces detectadas. Uma única
+               imagem (3, H, W) deve ser desempacotada para batch 1.
+
+        Returns:
+            Tensor (B, 128) — ativação pós-ReLU do classifier[:3],
+            antes do Linear(128, num_emotions) final.
+        """
+        features = self.backbone(x)              # (B, 384)
+        embedding = self.classifier[:3](features) # (B, 128)
+        return embedding
+    
     def predict_emotions(
         self,
         x: torch.Tensor,

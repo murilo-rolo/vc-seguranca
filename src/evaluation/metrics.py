@@ -26,10 +26,15 @@ import seaborn as sns
 # Importar modelos necessários
 try:
     from src.models.multimodal_risk import MultimodalRiskDetector
-    from src.models.resnet_lstm import create_model as create_video_model
     HAS_MULTIMODAL = True
 except ImportError:
     HAS_MULTIMODAL = False
+
+try:
+    from src.models.cnn3d_risk import CNN3DRiskDetector
+    HAS_CNN3D = True
+except ImportError:
+    HAS_CNN3D = False
 
 
 def calculate_metrics(
@@ -124,6 +129,80 @@ def calculate_metrics(
     return metrics
 
 
+def calculate_multiclass_metrics(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    y_proba: Optional[np.ndarray] = None,
+    class_names: Optional[List[str]] = None
+) -> Dict:
+    """
+    Calcula métricas multiclasse (ex: 8 emoções do EmotionNet).
+
+    Args:
+        y_true: Labels verdadeiros (índices de 0 a K-1)
+        y_pred: Predições (índices de 0 a K-1)
+        y_proba: Matriz de probabilidades (N, K) (opcional, para AUC OvR)
+        class_names: Nomes das classes (K)
+
+    Returns:
+        Dicionário com métricas (accuracy, precision/recall/f1 por classe,
+        macro/weighted, confusion matrix). Mantém as mesmas chaves padrão.
+    """
+    n_classes = len(class_names) if class_names else int(max(y_true.max(), y_pred.max()) + 1)
+    if class_names is None:
+        class_names = [f"Class_{i}" for i in range(n_classes)]
+
+    precision = precision_score(y_true, y_pred, average=None, zero_division=0)
+    recall = recall_score(y_true, y_pred, average=None, zero_division=0)
+    f1 = f1_score(y_true, y_pred, average=None, zero_division=0)
+
+    precision_macro = precision_score(y_true, y_pred, average='macro', zero_division=0)
+    recall_macro = recall_score(y_true, y_pred, average='macro', zero_division=0)
+    f1_macro = f1_score(y_true, y_pred, average='macro', zero_division=0)
+    precision_weighted = precision_score(y_true, y_pred, average='weighted', zero_division=0)
+    recall_weighted = recall_score(y_true, y_pred, average='weighted', zero_division=0)
+    f1_weighted = f1_score(y_true, y_pred, average='weighted', zero_division=0)
+
+    cm = confusion_matrix(y_true, y_pred, labels=list(range(n_classes)))
+
+    metrics = {
+        "accuracy": float(accuracy_score(y_true, y_pred)),
+        "precision": {
+            **{name: float(p) for name, p in zip(class_names, precision)},
+            "macro": float(precision_macro),
+            "weighted": float(precision_weighted),
+        },
+        "recall": {
+            **{name: float(r) for name, r in zip(class_names, recall)},
+            "macro": float(recall_macro),
+            "weighted": float(recall_weighted),
+        },
+        "f1_score": {
+            **{name: float(f) for name, f in zip(class_names, f1)},
+            "macro": float(f1_macro),
+            "weighted": float(f1_weighted),
+        },
+        "confusion_matrix_array": cm.tolist(),
+        "num_classes": n_classes,
+    }
+
+    if y_proba is not None and y_proba.ndim == 2 and y_proba.shape[1] == n_classes:
+        try:
+            metrics["auc_roc"] = float(
+                roc_auc_score(y_true, y_proba, multi_class='ovr', average='macro')
+            )
+        except ValueError:
+            pass
+        try:
+            metrics["auc_pr"] = float(
+                average_precision_score(y_true, y_proba, average='macro')
+            )
+        except ValueError:
+            pass
+
+    return metrics
+
+
 class MetricsCalculator:
     """
     Classe para calcular e salvar métricas de avaliação.
@@ -135,7 +214,7 @@ class MetricsCalculator:
         dataloader,
         device: str = "cuda" if torch.cuda.is_available() else "cpu",
         class_names: List[str] = ["Non-Violent", "Violent"],
-        video_model_path: Optional[str] = None
+        num_classes: Optional[int] = None
     ):
         """
         Inicializa o calculador de métricas.
@@ -145,49 +224,25 @@ class MetricsCalculator:
             dataloader: DataLoader com dados de teste
             device: Device para inferência
             class_names: Nomes das classes
-            video_model_path: Caminho para modelo de vídeo (ResNetLSTM) se necessário
+            num_classes: Número de classes. Se None, inferido de class_names
+                (>2 classes = multiclass).
         """
         self.model = model
         self.dataloader = dataloader
         self.device = torch.device(device)
-        self.class_names = class_names
+        self.class_names = list(class_names)
+        self.num_classes = num_classes if num_classes is not None else len(self.class_names)
         self.model.eval()
         
-        # Verificar se é modelo multimodal e precisa de video_model
-        self.video_model = None
+        # Verificar se é modelo multimodal (o modelo fusionado é usado diretamente)
         self.is_multimodal = False
         self.use_video_model = False
+        self.is_cnn3d = False
         
         if HAS_MULTIMODAL and isinstance(model, MultimodalRiskDetector):
             self.is_multimodal = True
-            # Verificar se usa fusão "late" (onde video_model é necessário)
-            if model.fusion_method == "late":
-                self.use_video_model = True
-                # Criar/carregar video_model (ResNetLSTM)
-                self.video_model = create_video_model(
-                    num_frames=16,
-                    hidden_size=256,
-                    num_layers=2,
-                    dropout=0.5,
-                    num_classes=2,
-                    pretrained=True,
-                    device=device
-                )
-                
-                # Carregar pesos se fornecido
-                if video_model_path:
-                    try:
-                        checkpoint = torch.load(video_model_path, map_location=device)
-                        if 'model_state_dict' in checkpoint:
-                            self.video_model.load_state_dict(checkpoint['model_state_dict'])
-                        else:
-                            self.video_model.load_state_dict(checkpoint)
-                        print(f"✓ Video model carregado de: {video_model_path}")
-                    except Exception as e:
-                        print(f"⚠ Aviso: Não foi possível carregar video_model: {e}")
-                        print("  Usando modelo com pesos ImageNet")
-                
-                self.video_model.eval()
+        if HAS_CNN3D and isinstance(model, CNN3DRiskDetector):
+            self.is_cnn3d = True
     
     def evaluate(self) -> Dict:
         """
@@ -218,42 +273,31 @@ class MetricsCalculator:
                 elif isinstance(inputs, (list, tuple)):
                     inputs = [x.to(self.device) if isinstance(x, torch.Tensor) else x for x in inputs]
                 
-                # Processar inputs para modelo multimodal com video_model se necessário
-                if self.is_multimodal and self.use_video_model and isinstance(inputs, (list, tuple)) and len(inputs) >= 3:
-                    # Inputs são (video, pose, emotion, ...)
-                    video, pose, emotion = inputs[0], inputs[1], inputs[2]
-                    
-                    # Extrair features de vídeo se necessário (mesma lógica de train_multimodal.py)
-                    if len(video.shape) == 5:  # (batch, T, C, H, W) - frames
-                        # Extrair features usando ResNet-LSTM
-                        # get_features espera (batch, num_frames, C, H, W)
-                        video_features = self.video_model.get_features(video)  # (batch, D_v)
-                        # Expandir para ter dimensão temporal
-                        video_features = video_features.unsqueeze(1)  # (batch, 1, D_v)
-                        # Repetir para T timesteps
-                        T = video.shape[1]
-                        video_features = video_features.repeat(1, T, 1)  # (batch, T, D_v)
-                    else:
-                        # Já são features
-                        video_features = video
-                    
-                    # Forward pass com features processadas
-                    outputs = self.model(video_features, pose, emotion)
+                # CNN3D: clipes vêm em frame-last (B, T, C, H, W) do dataloader —
+                # permutar para (B, C, T, H, W), mesma semântica de
+                # train_cnn3d.py:_permute_clips (o forward também auto-detecta).
+                if self.is_cnn3d and isinstance(inputs, torch.Tensor):
+                    if len(inputs.shape) == 5 and inputs.shape[1] != 3 and inputs.shape[2] == 3:
+                        inputs = inputs.permute(0, 2, 1, 3, 4)
+                
+                # Forward pass padrão (o modelo fusionado é usado diretamente)
+                if isinstance(inputs, torch.Tensor):
+                    outputs = self.model(inputs)
+                elif isinstance(inputs, (list, tuple)):
+                    outputs = self.model(*inputs)
                 else:
-                    # Forward pass padrão
-                    if isinstance(inputs, torch.Tensor):
-                        outputs = self.model(inputs)
-                    elif isinstance(inputs, (list, tuple)):
-                        outputs = self.model(*inputs)
-                    else:
-                        raise ValueError(f"Formato de input não suportado: {type(inputs)}")
+                    raise ValueError(f"Formato de input não suportado: {type(inputs)}")
                 
                 # Obter predições e probabilidades
                 probs = torch.softmax(outputs, dim=1)
                 preds = torch.argmax(outputs, dim=1)
                 
                 all_preds.append(preds.cpu().numpy())
-                all_probs.append(probs[:, 1].cpu().numpy())  # Probabilidade classe positiva
+                if self.num_classes > 2:
+                    # Multiclass: manter a matriz completa (N, K) para AUC OvR
+                    all_probs.append(probs.cpu().numpy())
+                else:
+                    all_probs.append(probs[:, 1].cpu().numpy())  # Probabilidade classe positiva
                 
                 if labels is not None:
                     if isinstance(labels, torch.Tensor):
@@ -270,7 +314,10 @@ class MetricsCalculator:
             raise ValueError("Labels não fornecidos no dataloader")
         
         # Calcular métricas
-        metrics = calculate_metrics(y_true, y_pred, y_proba, self.class_names)
+        if self.num_classes > 2:
+            metrics = calculate_multiclass_metrics(y_true, y_pred, y_proba, self.class_names)
+        else:
+            metrics = calculate_metrics(y_true, y_pred, y_proba, self.class_names)
         
         return metrics, y_true, y_pred, y_proba
     

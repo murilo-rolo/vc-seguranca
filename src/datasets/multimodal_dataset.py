@@ -191,14 +191,14 @@ class MultimodalSurveillanceDataset(Dataset):
                         for npy_file in violent_pose_dir.glob("*.npy"):
                             video_id = npy_file.stem
                             if self._check_all_modalities_exist(video_id, split_name, 1):
-                                samples.append((video_id, split_name, 1))
+                                samples.append((video_id, 1))
                     
                     non_violent_pose_dir = split_pose_dir / "non_violent"
                     if non_violent_pose_dir.exists():
                         for npy_file in non_violent_pose_dir.glob("*.npy"):
                             video_id = npy_file.stem
                             if self._check_all_modalities_exist(video_id, split_name, 0):
-                                samples.append((video_id, split_name, 0))
+                                samples.append((video_id, 0))
                 
                 # Embaralhar e dividir aleatoriamente (CAUSA DATA LEAKAGE)
                 random.seed(self.seed)
@@ -209,15 +209,11 @@ class MultimodalSurveillanceDataset(Dataset):
                 val_end = train_end + int(total * 0.15)
                 
                 if self.split == "train":
-                    filtered_samples = [s for s in samples if s[1] == "train"]
-                    return [(s[0], s[2]) for s in filtered_samples[:train_end]]
+                    return samples[:train_end]
                 elif self.split == "val":
-                    filtered_samples = [s for s in samples if s[1] == "val"]
-                    val_samples = filtered_samples[train_end:val_end] if len(filtered_samples) > train_end else filtered_samples
-                    return [(s[0], s[2]) for s in val_samples]
+                    return samples[train_end:val_end]
                 else:  # test
-                    filtered_samples = [s for s in samples if s[1] == "val"]
-                    return [(s[0], s[2]) for s in filtered_samples[val_end:]]
+                    return samples[val_end:]
         
         return samples
     

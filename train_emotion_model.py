@@ -35,14 +35,37 @@ AFFECTNET_CLASSES = {
 }
 
 
+def resolve_affectnet_root(dataset_path: Optional[str] = None) -> Path:
+    """Resolve a raiz do dataset de emoção (preferência: balanced-affectnet).
+
+    `dataset/balanced-affectnet/` é o layout baixado por
+    `download_datasets.py --affectnet` (pastas por classe, splits
+    `train`/`val`/`test`, sem `labels.csv`). O AffectNet legado
+    (`dataset/AffectNet/` com `labels.csv` + `Train`/`Test`) continua
+    suportado como fallback.
+    """
+    if dataset_path is not None:
+        return Path(dataset_path)
+    if (p.DATASET_ROOT / "balanced-affectnet").exists():
+        return p.DATASET_ROOT / "balanced-affectnet"
+    return p.AFFECTNET_ROOT
+
+
+def resolve_affectnet_splits(root: Path) -> Tuple[str, str]:
+    """Splits (treino, validação) conforme o layout do dataset de emoção."""
+    if (root / "train").is_dir():
+        return "train", "val"
+    return "Train", "Test"
+
+
 class AffectNetDataset(Dataset):
     """
     Dataset para AffectNet.
     
     Usa labels.csv como fonte oficial de ground truth (coluna 'label'),
     com fallback para labels por pasta caso o CSV não exista.
-    
-    Estrutura esperada:
+
+    Estrutura esperada (CSV mode, AffectNet legado):
     dataset/AffectNet/
     ├── labels.csv
     ├── Train/
@@ -51,6 +74,15 @@ class AffectNetDataset(Dataset):
     │   └── ...
     └── Test/
         └── ...
+
+    Estrutura esperada (folder mode, balanced-affectnet):
+    dataset/balanced-affectnet/
+    ├── train/<Classe>/*.png
+    ├── val/<Classe>/*.png
+    └── test/<Classe>/*.png
+
+    No folder mode a lista de classes é derivada das pastas reais (ordenadas);
+    labels = índice nessa lista. `min_confidence` só se aplica ao CSV mode.
     """
     
     def __init__(
@@ -74,15 +106,24 @@ class AffectNetDataset(Dataset):
         self.transform = transform
         self.min_confidence = min_confidence
         
-        self.class_to_idx = AFFECTNET_CLASSES.copy()
-        self.idx_to_class = {v: k for k, v in self.class_to_idx.items()}
-        
         csv_path = self.data_root / 'labels.csv'
         if csv_path.exists():
+            self.class_to_idx = AFFECTNET_CLASSES.copy()
+            self.idx_to_class = {v: k for k, v in self.class_to_idx.items()}
+            self.class_names = list(self.class_to_idx.keys())
             self.samples = self._load_from_csv(csv_path)
             source = "CSV"
         else:
-            print("⚠️  labels.csv não encontrado. Usando labels por pasta (legado).")
+            print("⚠️  labels.csv não encontrado. Usando labels por pasta (folders).")
+            # Lista de classes DERIVADA das pastas reais do split (ordenada),
+            # com fallback para a lista canônica quando não há pastas.
+            class_names = self._derive_class_names_from_folders()
+            if class_names is None:
+                class_names = list(AFFECTNET_CLASSES.keys())
+                print("  ⚠️  Nenhuma pasta de classe encontrada; usando AFFECTNET_CLASSES como fallback.")
+            self.class_names = class_names
+            self.class_to_idx = {name: idx for idx, name in enumerate(class_names)}
+            self.idx_to_class = {v: k for k, v in self.class_to_idx.items()}
             self.samples = self._load_from_folders()
             source = "pastas"
         
@@ -96,6 +137,21 @@ class AffectNetDataset(Dataset):
                 class_counts[label] = class_counts.get(label, 0) + 1
             print(f"  Distribuição: {', '.join(f'{self.idx_to_class[k]}: {v}' for k, v in sorted(class_counts.items()))}")
     
+    def _derive_class_names_from_folders(self) -> Optional[List[str]]:
+        """
+        Deriva a lista de classes das pastas reais do split (ordenadas).
+
+        Labels no modo folders = índice nessa lista derivada; nomes de exibição
+        = nomes das pastas. Retorna None se o split não existe ou não tem pastas.
+        """
+        split_dir = self.data_root / self.split
+        if not split_dir.exists():
+            return None
+        folders = sorted([d.name for d in split_dir.iterdir() if d.is_dir()])
+        if not folders:
+            return None
+        return folders
+
     def _load_from_csv(self, csv_path: Path) -> List[Tuple[Path, int]]:
         samples = []
         split_dir = self.data_root / self.split
@@ -291,16 +347,9 @@ def main():
     )
     
     parser.add_argument(
-        "--sampler",
+        "--balance-classes",
         action="store_true",
-        default=True,
-        help="Usar WeightedRandomSampler para balancear batches"
-    )
-    parser.add_argument(
-        "--no-sampler",
-        action="store_false",
-        dest="sampler",
-        help="Desabilitar WeightedRandomSampler"
+        help="Usar WeightedRandomSampler para balancear batches (OFF por padrão — dataset já balanceado)"
     )
     parser.add_argument(
         "--resume",
@@ -320,10 +369,19 @@ def main():
         dest="amp",
         help="Disable mixed precision training"
     )
+
+    parser.add_argument(
+        "--dataset_path",
+        type=str,
+        default=None,
+        help="Caminho para o dataset de emoção (default: dataset/balanced-affectnet; fallback: dataset/AffectNet)"
+    )
     
     args = parser.parse_args()
     
-    args.dataset_path = str(p.AFFECTNET_ROOT)
+    # Raiz e splits do dataset de emoção (balanced-affectnet por padrão)
+    args.dataset_path = str(resolve_affectnet_root(args.dataset_path))
+    train_split, val_split = resolve_affectnet_splits(Path(args.dataset_path))
     # Criar diretórios de saída (nova estrutura por modelo)
     output_dir = p.EMOTION_CNN_WEIGHTS
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -333,22 +391,22 @@ def main():
     # Criar datasets
     train_dataset = AffectNetDataset(
         data_root=args.dataset_path,
-        split="Train",
+        split=train_split,
         transform=get_transforms(is_train=True),
         min_confidence=args.min_confidence
     )
     
     val_dataset = AffectNetDataset(
         data_root=args.dataset_path,
-        split="Test",
+        split=val_split,
         transform=get_transforms(is_train=False),
         min_confidence=args.min_confidence
     )
     
     # Criar DataLoaders
     train_sampler = None
-    if args.sampler:
-        class_counts = torch.zeros(len(AFFECTNET_CLASSES))
+    if args.balance_classes:
+        class_counts = torch.zeros(len(train_dataset.class_to_idx))
         for _, label in train_dataset.samples:
             class_counts[label] += 1
         sample_weights = [1.0 / class_counts[label].item() for _, label in train_dataset.samples]
@@ -358,7 +416,7 @@ def main():
     
     train_loader = create_dataloader(
         train_dataset, batch_size=args.batch_size,
-        shuffle=not args.sampler, sampler=train_sampler,
+        shuffle=not args.balance_classes, sampler=train_sampler,
         num_workers=args.num_workers
     )
     val_loader = create_dataloader(
@@ -439,7 +497,7 @@ def main():
     print("=" * 60)
     print("Treinamento do Modelo de Emotion Recognition")
     print("=" * 60)
-    print(f"Dataset: {p.AFFECTNET_ROOT}")
+    print(f"Dataset: {args.dataset_path}")
     print(f"Device: {args.device}")
     print(f"Épocas: {args.epochs}")
     print(f"Batch size: {args.batch_size}")
@@ -448,9 +506,9 @@ def main():
     print(f"Warmup epochs: {args.warmup_epochs}")
     print(f"Mixed precision: {'ON' if args.amp else 'OFF'}")
     print(f"Gradient clip:   {'ON (max_norm=' + str(args.grad_clip) + ')' if args.grad_clip > 0 else 'OFF'}")
-    print(f"Sampler balanceado: {'ON' if args.sampler else 'OFF'}")
+    print(f"Sampler balanceado (--balance-classes): {'ON' if args.balance_classes else 'OFF'}")
     print(f"Early stop patience: {args.early_stop_patience}")
-    print(f"Min confidence: {args.min_confidence}")
+    print(f"Min confidence: {args.min_confidence} (aplica-se apenas a datasets CSV)")
     print(f"Classifier:           Linear(384→128→8)")
     print(f"Loss function:         Focal Loss (γ={args.focal_gamma})")
     print(f"Resume: {'ON (época ' + str(ckpt['epoch']) + ')' if args.resume and ckpt is not None else 'OFF'}")
@@ -502,7 +560,7 @@ def main():
             np.save(experiments_dir / 'confusion_matrix.npy', cm)
             _plot_confusion_matrix(
                 cm,
-                class_names=list(AFFECTNET_CLASSES.keys()),
+                class_names=list(train_dataset.class_to_idx.keys()),
                 output_path=experiments_dir / 'confusion_matrix.png'
             )
             print(f"\n✓ Melhor modelo salvo! Val Acc: {val_acc:.2f}%")

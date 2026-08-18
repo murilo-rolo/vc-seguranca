@@ -11,6 +11,7 @@ import json
 
 from src.models.multimodal_risk import create_multimodal_model
 from src.models.resnet_lstm import create_model as create_video_model
+from src.models.cnn3d_risk import create_cnn3d_model
 from src.datasets.multimodal_dataset import get_multimodal_dataloaders
 from src.training.utils import run_epoch
 from src import paths as p
@@ -18,16 +19,19 @@ from src import paths as p
 
 class _MultimodalWrapper(nn.Module):
     """Wrapper que encapsula extração de features de vídeo + forward multimodal."""
-    def __init__(self, multimodal_model, video_model):
+    def __init__(self, multimodal_model, video_model, video_backbone: str = "cnn3d"):
         super().__init__()
         self.multimodal = multimodal_model
         self.video_model = video_model
+        self.video_backbone = video_backbone
 
     def forward(self, video, pose, emotion):
         with torch.no_grad():
             if len(video.shape) == 5:
-                video_features = self.video_model.get_features(video)
-                video_features = video_features.unsqueeze(1).repeat(1, video.shape[1], 1)
+                # Frames chegam em frame-last (B, T, C, H, W); CNN3D espera (B, C, T, H, W)
+                if self.video_backbone == "cnn3d":
+                    video = video.permute(0, 2, 1, 3, 4)
+                video_features = self.video_model.get_features(video)  # (B, D_v) clip token
             else:
                 video_features = video
         return self.multimodal(video_features, pose, emotion)
@@ -42,22 +46,22 @@ def main():
     
     # Modelo
     parser.add_argument(
-        "--fusion_method",
-        type=str,
-        choices=["early", "late", "attention"],
-        default="late",
-        help="Método de fusão multimodal"
-    )
-    parser.add_argument(
         "--use_temporal_modeling",
         action="store_true",
         help="Usar LSTM para modelagem temporal por modalidade"
     )
     parser.add_argument(
+        "--video_backbone",
+        type=str,
+        choices=["cnn3d", "resnet_lstm"],
+        default="cnn3d",
+        help="Backbone de vídeo para features: cnn3d (padrão, 512 dims) ou resnet_lstm (256 dims)"
+    )
+    parser.add_argument(
         "--video_model_path",
         type=str,
         default=None,
-        help="Caminho para modelo de vídeo pré-treinado (opcional)"
+        help="Caminho para modelo de vídeo pré-treinado (CNN 3D se --video_backbone cnn3d)"
     )
     
     # Treinamento
@@ -118,36 +122,52 @@ def main():
     
     # Carregar modelo de vídeo (para extrair features)
     print("Carregando modelo de vídeo...")
-    video_model = create_video_model(
-        num_frames=args.num_frames,
-        hidden_size=256,
-        num_layers=2,
-        dropout=0.5,
-        num_classes=2,
-        pretrained=True,
-        device=args.device
-    )
-    
-    if args.video_model_path:
-        try:
-            checkpoint = torch.load(args.video_model_path, map_location=device)
-            if 'model_state_dict' in checkpoint:
-                video_model.load_state_dict(checkpoint['model_state_dict'])
-            else:
-                video_model.load_state_dict(checkpoint)
-            print(f"Modelo de vídeo carregado de: {args.video_model_path}")
-        except Exception as e:
-            print(f"Erro ao carregar modelo de vídeo: {e}")
-            print("Usando modelo com pesos ImageNet")
+    if args.video_backbone == "cnn3d":
+        if not args.video_model_path:
+            parser.error("--video_model_path (checkpoint CNN 3D) é obrigatório quando --video_backbone cnn3d")
+        video_checkpoint = torch.load(args.video_model_path, map_location=device)
+        model_name = video_checkpoint.get('model_name') or video_checkpoint.get('backbone') or "r2plus1d_18"
+        video_model = create_cnn3d_model(
+            model_name=model_name,
+            num_classes=2,
+            checkpoint_path=args.video_model_path,
+            num_frames=args.num_frames,
+            device=args.device
+        )
+        video_feature_dim = video_model.feature_dim  # 512
+        print(f"Modelo de vídeo CNN 3D ({model_name}) carregado de: {args.video_model_path}")
+    else:
+        video_model = create_video_model(
+            num_frames=args.num_frames,
+            hidden_size=256,
+            num_layers=2,
+            dropout=0.5,
+            num_classes=2,
+            pretrained=True,
+            device=args.device
+        )
+
+        if args.video_model_path:
+            try:
+                checkpoint = torch.load(args.video_model_path, map_location=device)
+                if 'model_state_dict' in checkpoint:
+                    video_model.load_state_dict(checkpoint['model_state_dict'])
+                else:
+                    video_model.load_state_dict(checkpoint)
+                print(f"Modelo de vídeo carregado de: {args.video_model_path}")
+            except Exception as e:
+                print(f"Erro ao carregar modelo de vídeo: {e}")
+                print("Usando modelo com pesos ImageNet")
+        video_feature_dim = 256
     
     # Criar modelo multimodal com wrapper
     print("Criando modelo multimodal...")
     multimodal_model = create_multimodal_model(
-        video_feature_dim=256, pose_feature_dim=99, emotion_feature_dim=8,
-        num_frames=args.window_size, fusion_method=args.fusion_method,
+        video_feature_dim=video_feature_dim, pose_feature_dim=99, emotion_feature_dim=128,
+        num_frames=args.window_size, fusion_method="cross_attention",
         use_temporal_modeling=args.use_temporal_modeling, device=args.device
     )
-    model = _MultimodalWrapper(multimodal_model, video_model).to(device)
+    model = _MultimodalWrapper(multimodal_model, video_model, video_backbone=args.video_backbone).to(device)
 
     print("Criando DataLoaders...")
     train_loader, val_loader, test_loader = get_multimodal_dataloaders(
@@ -168,7 +188,8 @@ def main():
     print("=" * 60)
     print("Treinamento do Modelo Multimodal")
     print("=" * 60)
-    print(f"Fusion method: {args.fusion_method}")
+    print(f"Fusion method: cross_attention")
+    print(f"Video backbone: {args.video_backbone} ({video_feature_dim} dims)")
     print(f"Temporal modeling: {args.use_temporal_modeling}")
     print(f"Device: {args.device}")
     print(f"Épocas: {args.epochs}")
@@ -202,8 +223,11 @@ def main():
                 'epoch': epoch, 'model_state_dict': multimodal_model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
                 'val_acc': val_acc, 'val_loss': val_loss,
-                'fusion_method': args.fusion_method,
-                'use_temporal_modeling': args.use_temporal_modeling
+                'fusion_method': 'cross_attention',
+                'use_temporal_modeling': args.use_temporal_modeling,
+                'emotion_feature_dim': multimodal_model.emotion_feature_dim,
+                'video_feature_dim': video_feature_dim,
+                'video_backbone': args.video_backbone
             }, output_dir / 'best_model.pth')
             print(f"\n✓ Melhor modelo salvo! Val Acc: {val_acc:.2f}%")
         print()

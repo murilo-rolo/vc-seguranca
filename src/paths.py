@@ -5,8 +5,12 @@ from pathlib import Path
 IN_COLAB = 'COLAB_GPU' in os.environ or 'COLAB_RELEASE' in os.environ
 
 if IN_COLAB:
-    PROJECT_ROOT = Path("/content/drive/Othercomputers/Meu laptop/cv-security-threat-detection-develop")
-    DATASET_ROOT = Path("/content/dataset")
+    if os.environ.get("GOOGLE_DRIVE_PROJECT_ROOT"):
+        PROJECT_ROOT = Path(os.environ["GOOGLE_DRIVE_PROJECT_ROOT"])
+        DATASET_ROOT = PROJECT_ROOT / "dataset"
+    else:
+        PROJECT_ROOT = Path("/content/drive/Othercomputers/Meu laptop/cv-security-threat-detection-develop")
+        DATASET_ROOT = Path("/content/dataset")
 else:
     PROJECT_ROOT = Path(__file__).resolve().parent.parent
     DATASET_ROOT = PROJECT_ROOT / "dataset"
@@ -29,6 +33,7 @@ COMPARISON_ROOT   = RESULTS_ROOT / "comparison"
 RWF2000_ROOT      = DATASET_ROOT / "RWF-2000"
 UCF101_ROOT       = DATASET_ROOT / "UCF101"
 AFFECTNET_ROOT    = DATASET_ROOT / "AffectNet"
+BALANCED_AFFECTNET_ROOT = DATASET_ROOT / "balanced-affectnet"
 
 # ── Novos paths por modelo (estrutura organizada) ──────────────────────────────
 MODELS_BASE       = PROJECT_ROOT / "models"

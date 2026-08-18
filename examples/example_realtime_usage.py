@@ -9,14 +9,14 @@ from src import paths as p
 
 
 def example_single_webcam():
-    """Exemplo: Detecção com webcam única."""
+    """Exemplo: Detecção com webcam única (backbone de vídeo CNN 3D, padrão)."""
     print("=" * 60)
     print("Exemplo 1: Webcam Única")
     print("=" * 60)
     
     detector = create_realtime_detector(
         multimodal_model_path="results/multimodal/best_model.pth",
-        video_model_path="results/models/best_model.pth",
+        cnn3d_model_path="results/cnn3d/rwf2000/best_model.pth",
         emotion_model_path="results/emotion/best_model.pth",
         video_source="0",  # Webcam
         window_size=16,
@@ -29,14 +29,14 @@ def example_single_webcam():
 
 
 def example_rtsp_stream():
-    """Exemplo: Detecção com stream RTSP."""
+    """Exemplo: Detecção com stream RTSP (CNN 3D, padrão)."""
     print("=" * 60)
     print("Exemplo 2: Stream RTSP")
     print("=" * 60)
     
     detector = create_realtime_detector(
         multimodal_model_path="results/multimodal/best_model.pth",
-        video_model_path="results/models/best_model.pth",
+        cnn3d_model_path="results/cnn3d/rwf2000/best_model.pth",
         emotion_model_path="results/emotion/best_model.pth",
         video_source="rtsp://user:pass@192.168.1.100:554/stream",
         window_size=16,
@@ -48,10 +48,10 @@ def example_rtsp_stream():
     detector.run(display=True)
 
 
-def example_cnn3d():
-    """Exemplo: Usando CNN 3D ao invés de ResNet-LSTM."""
+def example_resnet_lstm():
+    """Exemplo: Usando ResNet-LSTM como backbone de vídeo (alternativo)."""
     print("=" * 60)
-    print("Exemplo 3: CNN 3D")
+    print("Exemplo 3: ResNet-LSTM")
     print("=" * 60)
     
     detector = create_realtime_detector(
@@ -61,8 +61,8 @@ def example_cnn3d():
         window_size=16,
         risk_threshold=0.8,
         consecutive_windows=3,
-        use_cnn3d=True,
-        cnn3d_model_path="results/cnn3d/rwf2000/best_model.pth",
+        use_cnn3d=False,
+        video_model_path="results/resnet_lstm/best_model.pth",
         device="cuda"
     )
     
@@ -70,7 +70,7 @@ def example_cnn3d():
 
 
 def example_multi_camera():
-    """Exemplo: Múltiplas câmeras."""
+    """Exemplo: Múltiplas câmeras (CNN 3D, padrão)."""
     print("=" * 60)
     print("Exemplo 4: Múltiplas Câmeras")
     print("=" * 60)
@@ -78,7 +78,7 @@ def example_multi_camera():
     detector = create_multi_camera_detector(
         camera_sources=["0", "1", "rtsp://...", "rtsp://..."],
         multimodal_model_path="results/multimodal/best_model.pth",
-        video_model_path="results/models/best_model.pth",
+        cnn3d_model_path="results/cnn3d/rwf2000/best_model.pth",
         emotion_model_path="results/emotion/best_model.pth",
         window_size=16,
         risk_threshold=0.8,
@@ -90,14 +90,14 @@ def example_multi_camera():
 
 
 def example_custom_config():
-    """Exemplo: Configuração customizada."""
+    """Exemplo: Configuração customizada (CNN 3D, padrão)."""
     print("=" * 60)
     print("Exemplo 5: Configuração Customizada")
     print("=" * 60)
     
     detector = create_realtime_detector(
         multimodal_model_path="results/multimodal/best_model.pth",
-        video_model_path="results/models/best_model.pth",
+        cnn3d_model_path="results/cnn3d/rwf2000/best_model.pth",
         emotion_model_path="results/emotion/best_model.pth",
         video_source="0",
         window_size=32,  # Janela maior
@@ -128,7 +128,7 @@ if __name__ == "__main__":
         
         # example_single_webcam()
         # example_rtsp_stream()
-        # example_cnn3d()
+        # example_resnet_lstm()
         # example_multi_camera()
         # example_custom_config()
         

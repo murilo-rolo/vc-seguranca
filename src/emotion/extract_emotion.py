@@ -4,13 +4,16 @@ Módulo para extração de emoções faciais de vídeos usando modelos FER.
 Este módulo:
 1. Detecta faces em frames de vídeo
 2. Extrai e pré-processa faces detectadas
-3. Classifica emoções usando modelo FER
-4. Agrega probabilidades ao longo do tempo
-5. Salva vetores de emoção em formato .npy
+3. Extrai embeddings de emoção usando modelo FER
+4. Agrega TODAS as faces detectadas por frame (mean/max) em um único embedding
+5. Agrega embeddings ao longo do tempo
+6. Salva vetores de emoção em formato .npy
 
 Estrutura de dados:
-- Emotion vectors shape: (num_frames, num_emotions) onde cada linha é um vetor de probabilidades
-- Agregação temporal: média ou max pooling das emoções por frame
+- Emotion vectors shape: (num_frames, 128) onde cada linha é um vetor de embeddings (128-d)
+- Frames sem face detectada usam o embedding neutro pré-computado
+- Agregação por frame: média ou max pooling dos embeddings das faces (--face_aggregation)
+- Agregação temporal: média ou max pooling dos embeddings por frame
 """
 
 import cv2
@@ -37,6 +40,7 @@ except ImportError:
     HAS_RETINAFACE = False
 
 from ..models.emotion_cnn import EmotionNet, create_emotion_model
+from .neutral_embedding import compute_neutral_embedding
 
 
 class FaceDetector:
@@ -243,16 +247,19 @@ class EmotionExtractor:
     Pipeline:
     1. Detecta faces em cada frame
     2. Extrai e pré-processa faces
-    3. Classifica emoções usando modelo FER
-    4. Agrega probabilidades ao longo do tempo
+    3. Extrai embeddings de emoção (extract_features, 128-d) usando modelo FER
+    4. Agrega embeddings ao longo do tempo
     """
     
     def __init__(
         self,
         model: EmotionNet,
         face_detector: FaceDetector,
-        aggregation: str = "mean",  # "mean" ou "max"
-        batch_size: int = 32
+        aggregation: str = "mean",  # agregação temporal (compatibilidade)
+        face_aggregation: str = "mean",  # "mean" ou "max" — agregação das faces por frame
+        batch_size: int = 32,
+        neutral_val_dir: Optional[str] = None,
+        neutral_cache_path: Optional[str] = None,
     ):
         """
         Inicializa o extrator de emoções.
@@ -261,65 +268,97 @@ class EmotionExtractor:
             model: Modelo EmotionNet pré-treinado
             face_detector: Detector de faces
             aggregation: Método de agregação temporal ("mean" ou "max")
+            face_aggregation: Método de agregação de TODAS as faces detectadas
+                em um frame ("mean" = centroide semântico; "max" = expressão mais
+                saliente). Nenhuma face detectada -> embedding neutro (AD-004).
+            batch_size: Tamanho do batch de faces processadas
+            neutral_val_dir: Diretório com embeddings .npy do val (para o embedding neutro)
+            neutral_cache_path: Caminho opcional do cache do embedding neutro
         """
+        if face_aggregation not in ("mean", "max"):
+            raise ValueError(
+                f"face_aggregation deve ser 'mean' ou 'max', recebido: {face_aggregation}"
+            )
         self.model = model
         self.face_detector = face_detector
         self.aggregation = aggregation
+        self.face_aggregation = face_aggregation
         self.device = next(model.parameters()).device
         self.num_emotions = model.num_emotions
         self.batch_size = batch_size
+        self.neutral_embedding = compute_neutral_embedding(
+            model=model,
+            val_dir=neutral_val_dir,
+            cache_path=neutral_cache_path,
+            device=str(self.device),
+        )
     
     def extract_from_frame(
         self,
-        frame: np.ndarray
-    ) -> Optional[np.ndarray]:
+        frame: np.ndarray,
+        face_aggregation: Optional[str] = None
+    ) -> np.ndarray:
         """
-        Extrai vetor de emoções de um único frame.
-        
+        Extrai vetor de embeddings (128,) de um único frame agregando TODAS as faces.
+
+        Quando N>=1 faces são detectadas, retorna a agregação (`mean` ou `max`)
+        dos N embeddings de `extract_features`. Quando nenhuma face é detectada
+        (ou nenhuma face pôde ser extraída), retorna o embedding neutro (AD-004).
+
         Args:
             frame: Frame RGB (H, W, 3)
-        
+            face_aggregation: Estratégia de agregação das faces ("mean" ou "max").
+                None = usa self.face_aggregation.
+
         Returns:
-            Vetor de probabilidades (num_emotions,) ou None se não detectar face
+            Vetor de embeddings (128,)
         """
         # Detectar faces
         faces = self.face_detector.detect_faces(frame)
         
         if len(faces) == 0:
-            return None
+            return self.neutral_embedding.copy()
         
-        # Selecionar melhor face
-        best_face = self.face_detector.select_best_face(faces, frame.shape[:2])
+        agg = face_aggregation if face_aggregation is not None else self.face_aggregation
         
-        if best_face is None:
-            return None
+        # Extrair o embedding de CADA face detectada
+        embeddings: List[np.ndarray] = []
         
-        # Extrair face
-        face = self.face_detector.extract_face(frame, best_face, target_size=(224, 224))
+        for bbox in faces:
+            face = self.face_detector.extract_face(frame, bbox, target_size=(224, 224))
+            if face is None:
+                continue
+            
+            # Pré-processar face para o modelo
+            # Converter para tensor e normalizar
+            face_tensor = torch.from_numpy(face).float()
+            face_tensor = face_tensor.permute(2, 0, 1)  # (H, W, C) -> (C, H, W)
+            face_tensor = face_tensor / 255.0
+            
+            # Normalizar com ImageNet stats
+            mean = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
+            std = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1)
+            face_tensor = (face_tensor - mean) / std
+            
+            # Adicionar dimensão de batch
+            face_tensor = face_tensor.unsqueeze(0).to(self.device)
+            
+            # Extrair embedding da penúltima camada
+            with torch.no_grad():
+                embedding = self.model.extract_features(face_tensor)
+                embeddings.append(embedding.cpu().numpy()[0])  # (128,)
         
-        if face is None:
-            return None
+        if len(embeddings) == 0:
+            return self.neutral_embedding.copy()
         
-        # Pré-processar face para o modelo
-        # Converter para tensor e normalizar
-        face_tensor = torch.from_numpy(face).float()
-        face_tensor = face_tensor.permute(2, 0, 1)  # (H, W, C) -> (C, H, W)
-        face_tensor = face_tensor / 255.0
+        # Agregar todas as faces (mean = centroide; max = elemento a elemento)
+        emb_stack = np.stack(embeddings, axis=0)  # (N, 128)
         
-        # Normalizar com ImageNet stats
-        mean = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
-        std = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1)
-        face_tensor = (face_tensor - mean) / std
-        
-        # Adicionar dimensão de batch
-        face_tensor = face_tensor.unsqueeze(0).to(self.device)
-        
-        # Classificar emoção
-        with torch.no_grad():
-            probs = self.model.predict_emotions(face_tensor, return_probs=True)
-            probs = probs.cpu().numpy()[0]  # Remover batch dimension
-        
-        return probs
+        if agg == "mean":
+            return emb_stack.mean(axis=0)
+        if agg == "max":
+            return emb_stack.max(axis=0)
+        raise ValueError(f"face_aggregation inválido: {agg} (use 'mean' ou 'max')")
     
     def extract_from_video(
         self,
@@ -336,7 +375,7 @@ class EmotionExtractor:
             aggregation: Método de agregação temporal (None = usar padrão)
         
         Returns:
-            Array (num_frames, num_emotions) com vetores de emoção ou None se erro
+            Array (num_frames, 128) com vetores de embeddings ou None se erro
         """
         cap = cv2.VideoCapture(str(video_path))
         
@@ -362,13 +401,12 @@ class EmotionExtractor:
         
         num_selected_frames = len(frame_indices)
         
-        # Array de saída (num_frames, num_emotions)
-        emotion_array = np.zeros((num_selected_frames, self.num_emotions), dtype=np.float32)
+        # Array de saída (num_frames, 128)
+        emotion_dim = self.neutral_embedding.shape[0]
+        emotion_array = np.zeros((num_selected_frames, emotion_dim), dtype=np.float32)
         
-        # Pré-computar vetores neutros e zeros para reutilização
-        zero_vec = np.zeros(self.num_emotions, dtype=np.float32)
-        neutral_vec = np.zeros(self.num_emotions, dtype=np.float32)
-        neutral_vec[0] = 1.0
+        # Embedding neutro pré-computado para reutilização (frames sem face)
+        neutral_vec = self.neutral_embedding
         
         # Processar em batches de frames para aproveitar batching em MTCNN e Emotion CNN
         batch_size = max(1, self.batch_size)
@@ -387,8 +425,8 @@ class EmotionExtractor:
                 ret, frame = cap.read()
                 
                 if not ret:
-                    # Se não conseguir ler, usar vetor zero (mesmo comportamento anterior)
-                    emotion_array[pos] = zero_vec
+                    # Se não conseguir ler, usar embedding neutro
+                    emotion_array[pos] = neutral_vec
                     continue
                 
                 # Converter BGR para RGB
@@ -430,51 +468,54 @@ class EmotionExtractor:
                     faces = self.face_detector.detect_faces(frame_rgb)
                     faces_per_frame.append(faces)
             
-            # Preparar batch de faces para Emotion CNN
+            # Preparar batch com TODAS as faces de todos os frames do batch
             face_tensors: List[torch.Tensor] = []
-            face_tensor_pos: List[int] = []  # posição em emotion_array para cada face tensor
+            face_tensor_frame: List[int] = []  # posição em emotion_array por face
             
             # Valores de normalização (no device da CPU; serão movidos com o tensor)
             mean = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
             std = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1)
             
+            # Embeddings por frame (cada frame pode ter N faces)
+            frame_embeddings: Dict[int, List[np.ndarray]] = {pos: [] for pos in frame_pos_map}
+            
             for frame_rgb, faces, pos in zip(frames_rgb, faces_per_frame, frame_pos_map):
-                if len(faces) == 0:
-                    # Sem face detectada -> vetor neutral
-                    emotion_array[pos] = neutral_vec
-                    continue
-                
-                # Selecionar melhor face e extrair
-                best_face = self.face_detector.select_best_face(faces, frame_rgb.shape[:2])
-                if best_face is None:
-                    emotion_array[pos] = neutral_vec
-                    continue
-                
-                face = self.face_detector.extract_face(frame_rgb, best_face, target_size=(224, 224))
-                if face is None:
-                    emotion_array[pos] = neutral_vec
-                    continue
-                
-                # Pré-processar face para o modelo (igual a extract_from_frame)
-                face_tensor = torch.from_numpy(face).float()
-                face_tensor = face_tensor.permute(2, 0, 1)  # (H, W, C) -> (C, H, W)
-                face_tensor = face_tensor / 255.0
-                face_tensor = (face_tensor - mean) / std
-                face_tensors.append(face_tensor)
-                face_tensor_pos.append(pos)
+                for bbox in faces:
+                    face = self.face_detector.extract_face(frame_rgb, bbox, target_size=(224, 224))
+                    if face is None:
+                        continue
+                    
+                    # Pré-processar face para o modelo (igual a extract_from_frame)
+                    face_tensor = torch.from_numpy(face).float()
+                    face_tensor = face_tensor.permute(2, 0, 1)  # (H, W, C) -> (C, H, W)
+                    face_tensor = face_tensor / 255.0
+                    face_tensor = (face_tensor - mean) / std
+                    face_tensors.append(face_tensor)
+                    face_tensor_frame.append(pos)
             
             if face_tensors:
                 # Criar batch tensor e enviar para device
                 batch_tensor = torch.stack(face_tensors, dim=0).to(self.device)
                 
                 with torch.no_grad():
-                    probs_batch = self.model.predict_emotions(batch_tensor, return_probs=True)
-                    probs_batch = probs_batch.cpu().numpy()  # (B, num_emotions)
+                    emb_batch = self.model.extract_features(batch_tensor)
+                    emb_batch = emb_batch.cpu().numpy()  # (B, 128)
                 
-                # Normalizar e preencher emotion_array
-                for probs, pos in zip(probs_batch, face_tensor_pos):
-                    probs = probs / (probs.sum() + 1e-8)
-                    emotion_array[pos] = probs
+                # Distribuir embeddings por frame (um frame pode ter várias faces)
+                for emb, pos in zip(emb_batch, face_tensor_frame):
+                    frame_embeddings[pos].append(emb)
+            
+            # Agregar por frame (mean/max sobre as faces) — linhas independentes
+            for pos in frame_pos_map:
+                embs = frame_embeddings[pos]
+                if len(embs) == 0:
+                    emotion_array[pos] = neutral_vec
+                    continue
+                emb_stack = np.stack(embs, axis=0)  # (N, 128)
+                if self.face_aggregation == "mean":
+                    emotion_array[pos] = emb_stack.mean(axis=0)
+                else:
+                    emotion_array[pos] = emb_stack.max(axis=0)
         
         cap.release()
         
@@ -497,7 +538,8 @@ def extract_emotions_from_video(
     model: EmotionNet,
     num_frames: Optional[int] = None,
     face_detector_method: str = "mtcnn",
-    aggregation: str = "mean"
+    aggregation: str = "mean",
+    face_aggregation: str = "mean"
 ) -> Optional[np.ndarray]:
     """
     Função auxiliar para extrair emoções de um vídeo.
@@ -508,12 +550,18 @@ def extract_emotions_from_video(
         num_frames: Número de frames a processar
         face_detector_method: Método de detecção de faces
         aggregation: Método de agregação temporal
+        face_aggregation: Agregação das faces por frame ("mean" ou "max")
     
     Returns:
-        Array (num_frames, num_emotions) com vetores de emoção
+        Array (num_frames, 128) com vetores de embeddings
     """
     face_detector = FaceDetector(method=face_detector_method)
-    extractor = EmotionExtractor(model, face_detector, aggregation=aggregation, batch_size=256)
+    extractor = EmotionExtractor(
+        model, face_detector,
+        aggregation=aggregation,
+        face_aggregation=face_aggregation,
+        batch_size=256
+    )
     
     return extractor.extract_from_video(video_path, num_frames=num_frames)
 
@@ -525,7 +573,8 @@ def process_videos_for_emotion(
     num_frames: Optional[int] = None,
     video_extensions: Tuple[str, ...] = (".avi", ".mp4", ".mov"),
     face_detector_method: str = "mtcnn",
-    aggregation: str = "mean"
+    aggregation: str = "mean",
+    face_aggregation: str = "mean"
 ):
     """
     Processa todos os vídeos de um diretório e salva vetores de emoção.
@@ -538,6 +587,7 @@ def process_videos_for_emotion(
         video_extensions: Extensões de vídeo aceitas
         face_detector_method: Método de detecção de faces
         aggregation: Método de agregação temporal
+        face_aggregation: Agregação das faces por frame ("mean" ou "max")
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     
@@ -555,7 +605,11 @@ def process_videos_for_emotion(
     
     # Criar extrator uma vez (reutilizar para eficiência)
     face_detector = FaceDetector(method=face_detector_method)
-    extractor = EmotionExtractor(model, face_detector, aggregation=aggregation)
+    extractor = EmotionExtractor(
+        model, face_detector,
+        aggregation=aggregation,
+        face_aggregation=face_aggregation
+    )
     
     success_count = 0
     error_count = 0
@@ -596,7 +650,8 @@ def process_dataset_for_emotion(
     dataset_name: str,  # "rwf2000"
     num_frames: Optional[int] = None,
     face_detector_method: str = "mtcnn",
-    aggregation: str = "mean"
+    aggregation: str = "mean",
+    face_aggregation: str = "mean"
 ):
     """
     Processa um dataset completo (RWF-2000) para extrair emoções.
@@ -612,6 +667,7 @@ def process_dataset_for_emotion(
         num_frames: Número de frames a processar por vídeo
         face_detector_method: Método de detecção de faces
         aggregation: Método de agregação temporal
+        face_aggregation: Agregação das faces por frame ("mean" ou "max")
     """
     dataset_path = Path(dataset_root)
     output_path = Path(output_root)
@@ -637,7 +693,8 @@ def process_dataset_for_emotion(
                     model=model,
                     num_frames=num_frames,
                     face_detector_method=face_detector_method,
-                    aggregation=aggregation
+                    aggregation=aggregation,
+                    face_aggregation=face_aggregation
                 )
             
             # Processar NonFight (non_violent)
@@ -651,7 +708,8 @@ def process_dataset_for_emotion(
                     model=model,
                     num_frames=num_frames,
                     face_detector_method=face_detector_method,
-                    aggregation=aggregation
+                    aggregation=aggregation,
+                    face_aggregation=face_aggregation
                 )
     
     else:

@@ -124,7 +124,8 @@ def cmd_frames(args):
         processed_data_root=str(p.PROCESSED_ROOT),
         num_frames=args.num_frames,
         target_size=target_size,
-        normalize=args.normalize
+        normalize=args.normalize,
+        max_workers=args.workers
     )
 
     print("\nExtração de frames concluída!")
@@ -228,7 +229,8 @@ def cmd_emotion(args):
             "Saída raiz": str(p.EMOTION_ROOT),
             "Número de frames": args.num_frames if args.num_frames else "Todos",
             "Detector de faces": args.face_detector,
-            "Agregação": args.aggregation,
+            "Agregação temporal": args.aggregation,
+            "Agregação de faces": args.face_aggregation,
             "Device": device,
             "Modelo": str(EMOTION_MODEL_PATH),
         }
@@ -267,7 +269,8 @@ def cmd_emotion(args):
             dataset_name="rwf2000",
             num_frames=args.num_frames,
             face_detector_method=args.face_detector,
-            aggregation=args.aggregation
+            aggregation=args.aggregation,
+            face_aggregation=args.face_aggregation
         )
     else:
         print(f"\nAviso: Dataset RWF-2000 não encontrado em {rwf2000_path}")
@@ -309,7 +312,8 @@ def cmd_all(args):
         processed_data_root=str(p.PROCESSED_ROOT),
         num_frames=args.num_frames,
         target_size=tuple(args.target_size),
-        normalize=args.normalize
+        normalize=args.normalize,
+        max_workers=args.workers
     )
 
     # Etapa 3: Extrair pose
@@ -383,7 +387,8 @@ def cmd_all(args):
                 dataset_name="rwf2000",
                 num_frames=args.num_frames,
                 face_detector_method=args.face_detector,
-                aggregation=args.aggregation
+                aggregation=args.aggregation,
+                face_aggregation=args.face_aggregation
             )
         else:
             print(f"\nAviso: Dataset RWF-2000 não encontrado em {rwf2000_path}")
@@ -499,6 +504,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Método de agregação temporal (padrão: 'mean')"
     )
     p_emotion.add_argument(
+        "--face_aggregation", type=str, choices=["mean", "max"], default="mean",
+        help="Método de agregação das faces por frame (padrão: 'mean'; "
+             "'max' = máximo elemento a elemento sobre todas as faces; "
+             "frames sem face usam o embedding neutro)"
+    )
+    p_emotion.add_argument(
         "--device", type=str, default=None,
         help="Device para processamento (padrão: 'cuda' se disponível, senão 'cpu')"
     )
@@ -524,6 +535,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Normalizar valores dos pixels para [0, 1] (padrão: --normalize)"
     )
     p_all.add_argument(
+        "--workers", type=int, default=max(1, int(os.cpu_count() / 4)),
+        help="Número de workers paralelos para extração de frames (padrão: cpu_count/4)"
+    )
+    p_all.add_argument(
         "--dataset", type=str, choices=["ucf101", "rwf2000", "both"], default="both",
         help="Datasets para extração de pose: 'ucf101', 'rwf2000' ou 'both'"
     )
@@ -546,6 +561,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_all.add_argument(
         "--aggregation", type=str, choices=["mean", "max"], default="mean",
         help="Método de agregação temporal (padrão: 'mean')"
+    )
+    p_all.add_argument(
+        "--face_aggregation", type=str, choices=["mean", "max"], default="mean",
+        help="Método de agregação das faces por frame (padrão: 'mean'; "
+             "'max' = máximo elemento a elemento sobre todas as faces)"
     )
     p_all.add_argument(
         "--device", type=str, default=None,

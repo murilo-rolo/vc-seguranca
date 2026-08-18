@@ -63,8 +63,11 @@ class RealTimeRiskDetector:
         consecutive_windows: int = 3,  # Número de janelas consecutivas para alerta
         
         # Configuração de modelos
-        use_cnn3d: bool = False,  # Se True, usa CNN 3D, senão ResNet-LSTM
+        use_cnn3d: bool = True,  # Se True, usa CNN 3D (padrão), senão ResNet-LSTM
         cnn3d_model_path: Optional[str] = None,
+        
+        # Agregação de faces por frame
+        face_aggregation: str = "mean",  # "mean" ou "max" — todas as faces do frame
         
         # Device
         device: str = "cuda" if torch.cuda.is_available() else "cpu"
@@ -83,10 +86,15 @@ class RealTimeRiskDetector:
             num_frames: Número de frames por janela
             risk_threshold: Threshold de probabilidade para alerta
             consecutive_windows: Janelas consecutivas acima do threshold para alerta
-            use_cnn3d: Se True, usa CNN 3D para vídeo
+            use_cnn3d: Se True (padrão), usa CNN 3D para vídeo; se False, ResNet-LSTM
             cnn3d_model_path: Caminho para modelo CNN 3D (se use_cnn3d=True)
+            face_aggregation: Agregação de TODAS as faces por frame ("mean" ou "max")
             device: Device para inferência
         """
+        if face_aggregation not in ("mean", "max"):
+            raise ValueError(
+                f"face_aggregation deve ser 'mean' ou 'max', recebido: {face_aggregation}"
+            )
         self.video_source = video_source
         self.window_size = window_size
         self.overlap = overlap
@@ -95,6 +103,7 @@ class RealTimeRiskDetector:
         self.risk_threshold = risk_threshold
         self.consecutive_windows = consecutive_windows
         self.use_cnn3d = use_cnn3d
+        self.face_aggregation = face_aggregation
         self.device = torch.device(device)
         
         # Buffer de frames
@@ -134,33 +143,25 @@ class RealTimeRiskDetector:
         cnn3d_model_path: Optional[str]
     ):
         """Carrega todos os modelos necessários."""
-        # Modelo multimodal
-        multimodal_checkpoint = torch.load(multimodal_model_path, map_location=self.device)
-        fusion_method = multimodal_checkpoint.get('fusion_method', 'late')
-        use_temporal = multimodal_checkpoint.get('use_temporal_modeling', True)
-        
-        self.multimodal_model = create_multimodal_model(
-            video_feature_dim=256,
-            pose_feature_dim=99,
-            emotion_feature_dim=8,
-            num_frames=self.num_frames,
-            fusion_method=fusion_method,
-            use_temporal_modeling=use_temporal,
-            device=self.device
-        )
-        self.multimodal_model.load_state_dict(multimodal_checkpoint['model_state_dict'])
-        self.multimodal_model.eval()
-        
-        # Modelo de vídeo
+        # Modelo de vídeo primeiro — define D_v (necessário para o multimodal)
         if self.use_cnn3d:
             if cnn3d_model_path:
+                # Backbone dirigido pela metadata do checkpoint (model_name/backbone),
+                # com fallback para o default r2plus1d_18 (pesos Kinetics-400).
+                checkpoint = torch.load(cnn3d_model_path, map_location=self.device)
+                model_name = checkpoint.get('model_name') or checkpoint.get('backbone') or "r2plus1d_18"
+                # Mesma tolerância de train_cnn3d.py: create_cnn3d_model carrega
+                # checkpoint UCF101 (9 classes) via backbone-only (strict=False) e
+                # checkpoint RWF-2000 (2 classes) via state_dict completo.
                 self.video_model = create_cnn3d_model(
-                    model_name="r2plus1d_18",
+                    model_name=model_name,
                     num_classes=2,
                     checkpoint_path=cnn3d_model_path,
                     num_frames=self.num_frames,
                     device=self.device
                 )
+                video_feature_dim = self.video_model.feature_dim  # 512
+                self.video_model.eval()
             else:
                 raise ValueError("cnn3d_model_path necessário quando use_cnn3d=True")
         else:
@@ -187,6 +188,24 @@ class RealTimeRiskDetector:
                     device=self.device
                 )
             self.video_model.eval()
+            video_feature_dim = 256
+
+        # Modelo multimodal
+        multimodal_checkpoint = torch.load(multimodal_model_path, map_location=self.device)
+        fusion_method = multimodal_checkpoint.get('fusion_method', 'cross_attention')
+        use_temporal = multimodal_checkpoint.get('use_temporal_modeling', True)
+
+        self.multimodal_model = create_multimodal_model(
+            video_feature_dim=multimodal_checkpoint.get('video_feature_dim', video_feature_dim),
+            pose_feature_dim=99,
+            emotion_feature_dim=multimodal_checkpoint.get('emotion_feature_dim', 128),
+            num_frames=self.num_frames,
+            fusion_method=fusion_method,
+            use_temporal_modeling=use_temporal,
+            device=self.device
+        )
+        self.multimodal_model.load_state_dict(multimodal_checkpoint['model_state_dict'])
+        self.multimodal_model.eval()
         
         # Modelo de emoção
         if emotion_model_path:
@@ -218,18 +237,19 @@ class RealTimeRiskDetector:
         self.emotion_extractor = EmotionExtractor(
             model=self.emotion_model,
             face_detector=face_detector,
-            aggregation="mean"
+            aggregation="mean",
+            face_aggregation=self.face_aggregation
         )
     
     def _extract_video_features(self, frames: np.ndarray) -> torch.Tensor:
         """
         Extrai features de vídeo de uma janela de frames.
-        
+
         Args:
             frames: Array (T, H, W, C) de frames
-        
+
         Returns:
-            Features de vídeo (T, D_v) ou (D_v) dependendo do modelo
+            Clip token (1, D_v) de features de vídeo
         """
         # Converter para tensor
         frames_tensor = torch.from_numpy(frames).float()
@@ -247,18 +267,15 @@ class RealTimeRiskDetector:
             if self.use_cnn3d:
                 # CNN 3D espera (batch, C, T, H, W)
                 frames_3d = frames_tensor.unsqueeze(0).permute(0, 2, 1, 3, 4)  # (1, C, T, H, W)
-                features = self.video_model(frames_3d)  # (1, num_classes)
-                # Para multimodal, precisamos de features temporais
-                # Por simplicidade, repetir features para T timesteps
-                features = features.unsqueeze(1).repeat(1, self.num_frames, 1)  # (1, T, D_v)
-                return features.squeeze(0)  # (T, D_v)
+                # Clip token (1, D_v) — o backbone já modela o tempo internamente
+                features = self.video_model.get_features(frames_3d)  # (1, D_v)
+                return features
             else:
                 # ResNet-LSTM
                 frames_batch = frames_tensor.unsqueeze(0)  # (1, T, C, H, W)
                 features = self.video_model.get_features(frames_batch)  # (1, D_v)
-                # Expandir para T timesteps
-                features = features.unsqueeze(1).repeat(1, self.num_frames, 1)  # (1, T, D_v)
-                return features.squeeze(0)  # (T, D_v)
+                # Clip token (1, D_v)
+                return features
     
     def _extract_pose_features(self, frames: np.ndarray) -> torch.Tensor:
         """
@@ -288,25 +305,27 @@ class RealTimeRiskDetector:
     def _extract_emotion_features(self, frames: np.ndarray) -> torch.Tensor:
         """
         Extrai features de emoção de uma janela de frames.
-        
+
         Args:
             frames: Array (T, H, W, C) de frames
-        
+
         Returns:
-            Features de emoção (T, num_emotions)
+            Features de emoção (T, 128) — embeddings da penúltima camada
         """
         emotion_vectors = []
         
         for frame in frames:
-            emotion_vec = self.emotion_extractor.extract_from_frame(frame)
+            # Agrega TODAS as faces do frame (mean/max) em um único embedding (128,)
+            emotion_vec = self.emotion_extractor.extract_from_frame(
+                frame, face_aggregation=self.face_aggregation
+            )
             if emotion_vec is None:
-                # Se não detectar face, usar vetor neutral
-                emotion_vec = np.zeros(8)
-                emotion_vec[0] = 1.0  # Neutral
+                # Se não detectar face, usar o embedding neutro (128-d)
+                emotion_vec = self.emotion_extractor.neutral_embedding
             emotion_vectors.append(emotion_vec)
         
         # Converter para tensor
-        emotion_array = np.array(emotion_vectors)  # (T, 8)
+        emotion_array = np.array(emotion_vectors)  # (T, 128)
         emotion_tensor = torch.from_numpy(emotion_array).float()
         
         return emotion_tensor
@@ -322,14 +341,14 @@ class RealTimeRiskDetector:
             Probabilidade de risco (0-1)
         """
         # Extrair features
-        video_features = self._extract_video_features(frames)  # (T, D_v)
+        video_features = self._extract_video_features(frames)  # (1, D_v)
         pose_features = self._extract_pose_features(frames)  # (T, 33, 3)
-        emotion_features = self._extract_emotion_features(frames)  # (T, 8)
+        emotion_features = self._extract_emotion_features(frames)  # (T, 128)
         
         # Converter para formato do modelo multimodal
-        video_features = video_features.unsqueeze(0).to(self.device)  # (1, T, D_v)
+        video_features = video_features.to(self.device)  # (1, D_v) clip token
         pose_features = pose_features.unsqueeze(0).to(self.device)  # (1, T, 33, 3)
-        emotion_features = emotion_features.unsqueeze(0).to(self.device)  # (1, T, 8)
+        emotion_features = emotion_features.unsqueeze(0).to(self.device)  # (1, T, 128)
         
         # Flatten pose se necessário
         if len(pose_features.shape) == 4:
@@ -601,8 +620,9 @@ def create_realtime_detector(
     window_size: int = 16,
     risk_threshold: float = 0.8,
     consecutive_windows: int = 3,
-    use_cnn3d: bool = False,
+    use_cnn3d: bool = True,
     cnn3d_model_path: Optional[str] = None,
+    face_aggregation: str = "mean",
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
 ) -> RealTimeRiskDetector:
     """
@@ -621,6 +641,7 @@ def create_realtime_detector(
         consecutive_windows=consecutive_windows,
         use_cnn3d=use_cnn3d,
         cnn3d_model_path=cnn3d_model_path,
+        face_aggregation=face_aggregation,
         device=device
     )
 

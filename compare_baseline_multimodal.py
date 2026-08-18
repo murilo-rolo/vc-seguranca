@@ -17,13 +17,15 @@ import numpy as np
 
 from src.models.resnet_lstm import create_model as create_baseline_model
 from src.models.multimodal_risk import create_multimodal_model
+from src.models.cnn3d_risk import create_cnn3d_model
 from src.models.resnet_lstm import ResNetLSTM
 from src.datasets.surveillance_dataset import get_dataloaders as get_baseline_dataloaders
 from src.datasets.multimodal_dataset import get_multimodal_dataloaders
 from src import paths as p
 
 
-def evaluate_model(model, dataloader, device, is_multimodal=False, video_model=None):
+def evaluate_model(model, dataloader, device, is_multimodal=False, video_model=None,
+                   video_backbone="cnn3d"):
     """
     Avalia um modelo.
     
@@ -33,6 +35,7 @@ def evaluate_model(model, dataloader, device, is_multimodal=False, video_model=N
         device: Device
         is_multimodal: Se True, modelo é multimodal
         video_model: Modelo de vídeo (para multimodal)
+        video_backbone: Backbone de vídeo do multimodal ("cnn3d" ou "resnet_lstm")
     
     Returns:
         Dict com predições e labels
@@ -56,13 +59,9 @@ def evaluate_model(model, dataloader, device, is_multimodal=False, video_model=N
                 
                 # Extrair features de vídeo se necessário
                 if len(video.shape) == 5:  # (batch, T, C, H, W)
-                    # get_features espera (batch, num_frames, C, H, W)
-                    video_features = video_model.get_features(video)  # (batch, D_v)
-                    # Expandir para ter dimensão temporal
-                    video_features = video_features.unsqueeze(1)  # (batch, 1, D_v)
-                    # Repetir para T timesteps
-                    T = video.shape[1]
-                    video_features = video_features.repeat(1, T, 1)  # (batch, T, D_v)
+                    if video_backbone == "cnn3d":
+                        video = video.permute(0, 2, 1, 3, 4)  # (B, C, T, H, W)
+                    video_features = video_model.get_features(video)  # (batch, D_v) clip token
                 else:
                     video_features = video
                 
@@ -147,6 +146,12 @@ def main():
         default="cuda" if torch.cuda.is_available() else "cpu",
         help="Device para avaliação"
     )
+    parser.add_argument(
+        "--video_model_path",
+        type=str,
+        default=None,
+        help="Checkpoint do backbone de vídeo do multimodal (padrão: conforme o video_backbone gravado no checkpoint multimodal)"
+    )
     
     args = parser.parse_args()
     
@@ -180,35 +185,50 @@ def main():
     # Carregar modelo multimodal
     print("Carregando modelo multimodal...")
     multimodal_checkpoint = torch.load(args.multimodal_model_path, map_location=device)
-    fusion_method = multimodal_checkpoint.get('fusion_method', 'late')
+    fusion_method = multimodal_checkpoint.get('fusion_method', 'cross_attention')
     use_temporal = multimodal_checkpoint.get('use_temporal_modeling', True)
-    
+    # Dimensão/backbone de vídeo lidos do checkpoint (cnn3d default)
+    video_backbone = multimodal_checkpoint.get('video_backbone', 'cnn3d')
+    video_feature_dim = multimodal_checkpoint.get('video_feature_dim')
+    if video_feature_dim is None:
+        video_feature_dim = 512 if video_backbone == 'cnn3d' else 256
+
     multimodal_model = create_multimodal_model(
-        video_feature_dim=256,
+        video_feature_dim=video_feature_dim,
         pose_feature_dim=99,
-        emotion_feature_dim=8,
+        emotion_feature_dim=128,
         num_frames=16,
         fusion_method=fusion_method,
         use_temporal_modeling=use_temporal,
         device=args.device
     )
     multimodal_model.load_state_dict(multimodal_checkpoint['model_state_dict'])
-    print("✓ Modelo multimodal carregado")
-    
-    # Carregar modelo de vídeo para multimodal
-    video_model = create_baseline_model(
-        num_frames=16,
-        hidden_size=256,
-        num_layers=2,
-        dropout=0.5,
-        num_classes=2,
-        pretrained=True,
-        device=args.device
-    )
-    if 'model_state_dict' in baseline_checkpoint:
-        video_model.load_state_dict(baseline_checkpoint['model_state_dict'])
+    print(f"✓ Modelo multimodal carregado (backbone de vídeo: {video_backbone}, {video_feature_dim} dims)")
+
+    # Carregar modelo de vídeo para multimodal (conforme backbone gravado no checkpoint)
+    if video_backbone == "cnn3d":
+        video_ckpt_path = args.video_model_path or str(p.CNN3D_RWF2000_WEIGHTS / "best_model.pth")
+        video_ckpt = torch.load(video_ckpt_path, map_location=device)
+        video_model_name = video_ckpt.get('model_name') or video_ckpt.get('backbone') or "r2plus1d_18"
+        video_model = create_cnn3d_model(
+            model_name=video_model_name,
+            num_classes=2,
+            checkpoint_path=video_ckpt_path,
+            device=args.device
+        )
     else:
-        video_model.load_state_dict(baseline_checkpoint)
+        video_ckpt_path = args.video_model_path or str(p.RESNET_LSTM_WEIGHTS / "best_model.pth")
+        video_model = create_baseline_model(
+            num_frames=16,
+            hidden_size=256,
+            num_layers=2,
+            dropout=0.5,
+            num_classes=2,
+            pretrained=True,
+            device=args.device
+        )
+        video_ckpt = torch.load(video_ckpt_path, map_location=device)
+        video_model.load_state_dict(video_ckpt.get('model_state_dict', video_ckpt))
     
     # Criar DataLoaders
     print("Criando DataLoaders...")
@@ -247,7 +267,7 @@ def main():
     print("Avaliando modelo multimodal...")
     multimodal_results = evaluate_model(
         multimodal_model, multimodal_test_loader, device,
-        is_multimodal=True, video_model=video_model
+        is_multimodal=True, video_model=video_model, video_backbone=video_backbone
     )
     multimodal_metrics = calculate_metrics(multimodal_results)
     print("✓ Multimodal avaliado")
@@ -293,7 +313,9 @@ def main():
             'f1_score_violent': float(f1_improvement)
         },
         'fusion_method': fusion_method,
-        'use_temporal_modeling': use_temporal
+        'use_temporal_modeling': use_temporal,
+        'video_backbone': video_backbone,
+        'video_feature_dim': video_feature_dim
     }
     
     with open(output_dir / 'comparison.json', 'w') as f:

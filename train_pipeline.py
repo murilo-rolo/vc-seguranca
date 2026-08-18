@@ -248,7 +248,7 @@ class TrainingPipeline:
         
         return self.run_command(cmd, f"Treinamento CNN 3D ({stage})", required=False)
     
-    def train_multimodal(self, epochs: int = 50, fusion_method: str = "late", **kwargs) -> bool:
+    def train_multimodal(self, epochs: int = 50, video_backbone: str = "cnn3d", **kwargs) -> bool:
         """Treina modelo multimodal."""
         model_path = p.MULTIMODAL_WEIGHTS / "best_model.pth"
         
@@ -265,25 +265,26 @@ class TrainingPipeline:
                 return True
         
         # Verificar modelos base
-        video_model_path = p.RESNET_LSTM_WEIGHTS / "best_model.pth"
-        emotion_model_path = p.EMOTION_CNN_WEIGHTS / "best_model.pth"
-        
-        if not video_model_path.exists():
-            print(f"❌ Modelo ResNet-LSTM não encontrado em {video_model_path}")
-            print("   Execute treinamento de ResNet-LSTM primeiro")
-            return False
+        if video_backbone == "cnn3d":
+            video_model_path = p.CNN3D_RWF2000_WEIGHTS / "best_model.pth"
+            if not video_model_path.exists():
+                print(f"❌ Modelo CNN 3D não encontrado em {video_model_path}")
+                print("   Execute treinamento de CNN 3D primeiro (train_pipeline.py --cnn3d)")
+                print("   ou use --video_backbone resnet_lstm para usar ResNet-LSTM como backbone de vídeo")
+                return False
+        else:
+            video_model_path = p.RESNET_LSTM_WEIGHTS / "best_model.pth"
+            if not video_model_path.exists():
+                print(f"❌ Modelo ResNet-LSTM não encontrado em {video_model_path}")
+                print("   Execute treinamento de ResNet-LSTM primeiro")
+                return False
         
         cmd = [
             sys.executable, "train_multimodal.py",
             "--epochs", str(epochs),
-            "--fusion_method", fusion_method,
+            "--video_backbone", video_backbone,
             "--video_model_path", str(video_model_path),
         ]
-        
-        if emotion_model_path.exists():
-            cmd.extend(["--emotion_model_path", str(emotion_model_path)])
-        else:
-            print("⚠️  Modelo EmotionNet não encontrado. Continuando sem ele.")
         
         if "batch_size" in kwargs:
             cmd.extend(["--batch_size", str(kwargs["batch_size"])])
@@ -319,13 +320,13 @@ class TrainingPipeline:
         
         # 2. Treinar EmotionNet (opcional)
         if not skip_emotion:
-            affectnet_path = kwargs.get("affectnet_path", "dataset/AffectNet")
+            affectnet_path = kwargs.get("affectnet_path", "dataset/balanced-affectnet")
             if not self.train_emotion_net(affectnet_path, **kwargs):
                 print("⚠️  Falha no treinamento de EmotionNet (continuando)")
         else:
             print("\n⏭️  Pulando treinamento de EmotionNet (--skip_emotion)")
         
-        # 3. Treinar CNN 3D (opcional)
+        # 3. Treinar CNN 3D (necessária para o multimodal com backbone cnn3d default)
         if not skip_cnn3d:
             # Pré-treinamento em UCF101
             ucf101_path = kwargs.get("ucf101_path", "dataset/UCF101")
@@ -341,8 +342,13 @@ class TrainingPipeline:
             else:
                 print(f"\n⏭️  Dataset UCF101 não encontrado em {ucf101_path}")
                 print("   Pulando treinamento de CNN 3D")
+                print("   (o multimodal com --video_backbone cnn3d exigirá o checkpoint em")
+                print(f"    {p.CNN3D_RWF2000_WEIGHTS / 'best_model.pth'} — use --video_backbone resnet_lstm para usar ResNet-LSTM)")
         else:
             print("\n⏭️  Pulando treinamento de CNN 3D (--skip_cnn3d)")
+            if kwargs.get("video_backbone", "cnn3d") == "cnn3d":
+                print("   ⚠ O multimodal usará CNN 3D por padrão; sem o checkpoint, o treino")
+                print("     multimodal falhará. Use --video_backbone resnet_lstm para ResNet-LSTM.")
         
         # 4. Treinar Multimodal
         if not self.train_multimodal(**kwargs):
@@ -391,7 +397,10 @@ Exemplos de uso:
   python train_pipeline.py --multimodal
 
   # Treinar com opções customizadas
-  python train_pipeline.py --all --skip_emotion --skip_cnn3d --epochs 30
+  python train_pipeline.py --all --skip_emotion --epochs 30
+
+  # Usar ResNet-LSTM como backbone de vídeo (alternativo; default é CNN 3D)
+  python train_pipeline.py --all --video_backbone resnet_lstm --skip_cnn3d
 
   # Treinar apenas ResNet-LSTM
   python train_pipeline.py --resnet_lstm --epochs 50 --batch_size 8
@@ -416,9 +425,14 @@ Exemplos de uso:
     parser.add_argument("--skip_emotion", action="store_true",
                        help="Pular treinamento de EmotionNet")
     parser.add_argument("--skip_cnn3d", action="store_true",
-                       help="Pular treinamento de CNN 3D")
+                       help="Pular treinamento de CNN 3D (use --video_backbone resnet_lstm para o multimodal)")
     parser.add_argument("--force_retrain", action="store_true",
                        help="Forçar retreinamento mesmo se modelo já existir")
+    
+    # Backbone de vídeo do multimodal
+    parser.add_argument("--video_backbone", type=str,
+                       choices=["cnn3d", "resnet_lstm"], default="cnn3d",
+                       help="Backbone de vídeo do multimodal: cnn3d (padrão) ou resnet_lstm")
     
     # Parâmetros de treinamento
     parser.add_argument("--epochs", type=int, default=50,
@@ -429,9 +443,6 @@ Exemplos de uso:
                        help="Taxa de aprendizado (padrão: 1e-4)")
     parser.add_argument("--device", type=str, default="cuda",
                        help="Device para treinamento (padrão: cuda)")
-    parser.add_argument("--fusion_method", type=str, default="late",
-                       choices=["early", "late", "attention"],
-                       help="Método de fusão para multimodal (padrão: late)")
     
         # Caminhos de datasets
     parser.add_argument("--affectnet_path", type=str, default=None,
@@ -443,7 +454,10 @@ Exemplos de uso:
     
     args = parser.parse_args()
     if args.affectnet_path is None:
-        args.affectnet_path = str(p.AFFECTNET_ROOT)
+        if Path(p.DATASET_ROOT / "balanced-affectnet").exists():
+            args.affectnet_path = str(p.DATASET_ROOT / "balanced-affectnet")
+        else:
+            args.affectnet_path = str(p.AFFECTNET_ROOT)
     if args.ucf101_path is None:
         args.ucf101_path = str(p.UCF101_ROOT)
     if args.project_root is None:
@@ -458,9 +472,9 @@ Exemplos de uso:
         "batch_size": args.batch_size,
         "learning_rate": args.learning_rate,
         "device": args.device,
-        "fusion_method": args.fusion_method,
         "affectnet_path": args.affectnet_path,
         "ucf101_path": args.ucf101_path,
+        "video_backbone": args.video_backbone,
     }
     
     # Executar modo selecionado

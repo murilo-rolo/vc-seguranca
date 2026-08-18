@@ -5,7 +5,7 @@ Script unificado para download e preparação de datasets.
 Este script baixa e prepara os datasets necessários para o projeto:
 - RWF-2000: Dataset de violência em vídeos
 - UCF101: Dataset de reconhecimento de ações (filtrado para 9 classes)
-- AffectNet: Dataset de reconhecimento de emoções
+- AffectNet (balanced): Dataset de reconhecimento de emoções (dollyprajapati182/balanced-affectnet)
 
 Uso:
     python download_datasets.py --all              # Baixar tudo
@@ -19,7 +19,7 @@ import argparse
 import os
 import shutil
 import sys
-import urllib.request
+import subprocess
 import zipfile
 from pathlib import Path, PurePath
 from typing import List, Optional
@@ -29,42 +29,62 @@ from src import paths as p
 
 def download_file(url: str, dest: Path, description: str = "") -> bool:
     """
-    Faz download de um arquivo URL para o destino.
-    
+    Faz download de um arquivo usando aria2c (16 conexões paralelas).
+
     Args:
         url: URL do arquivo
         dest: Caminho de destino
         description: Descrição do arquivo para mensagens
-        
+
     Returns:
         True se sucesso, False caso contrário
     """
     if dest.exists():
         print(f"[SKIP] Arquivo já existe: {dest}")
         return True
-    
+
+    if not shutil.which("aria2c"):
+        print("[ERRO] aria2c não encontrado. Instale com:")
+        print("  sudo apt install aria2          # Debian/Ubuntu")
+        print("  sudo pacman -S aria2            # Arch")
+        print("  brew install aria2              # macOS")
+        print("  choco install aria2             # Windows (Chocolatey)")
+        return False
+
     print(f"[DOWNLOAD] {description or dest.name}")
     print(f"  URL: {url}")
     print(f"  Destino: {dest}")
-    
-    try:
-        def progress_hook(block_num: int, block_size: int, total_size: int):
-            if total_size > 0:
-                percent = min(100, block_num * block_size * 100 // total_size)
-                downloaded_mb = block_num * block_size / (1024 * 1024)
-                total_mb = total_size / (1024 * 1024)
-                print(f"\r  Progresso: {percent}% ({downloaded_mb:.1f}/{total_mb:.1f} MB)", end="", flush=True)
-        
-        urllib.request.urlretrieve(url, str(dest), reporthook=progress_hook)
-        print()  # Nova linha após progresso
-        print(f"[OK] Download concluído: {dest}")
+    print(f"  Motor: aria2c (16 conexões paralelas)")
+
+    cmd = [
+        "aria2c",
+        "--max-connection-per-server=16",
+        "--split=16",
+        "--min-split-size=1M",
+        "--continue=true",
+        "--max-tries=5",
+        "--retry-wait=3",
+        "--timeout=60",
+        "--connect-timeout=30",
+        "--auto-file-renaming=false",
+        "--console-log-level=notice",
+        "--summary-interval=0",
+        "-d", str(dest.parent),
+        "-o", dest.name,
+        url,
+    ]
+
+    result = subprocess.run(cmd)
+
+    if result.returncode == 0 and dest.exists():
+        size_mb = dest.stat().st_size / (1024 * 1024)
+        print(f"[OK] Download concluído: {dest} ({size_mb:.1f} MB)")
         return True
-        
-    except Exception as e:
-        print(f"[ERRO] Falha no download: {e}")
-        if dest.exists():
-            dest.unlink()  # Deletar arquivo parcial
-        return False
+
+    print(f"[ERRO] aria2c falhou (código {result.returncode})")
+    if dest.exists():
+        dest.unlink()
+    return False
 
 
 def _decode_zip_name(info: zipfile.ZipInfo) -> str:
@@ -261,42 +281,48 @@ def download_ucf101(filter_classes: bool = True) -> bool:
 
 
 def download_affectnet() -> bool:
-    """Baixa e extrai o dataset AffectNet."""
+    """
+    Baixa e extrai o dataset balanced-affectnet.
+
+    Layout do zip (na raiz, sem 'archive (3)' e sem movimentação Train/Test):
+        balanced-affectnet/
+        ├── train/<Classe>/*.png
+        ├── val/<Classe>/*.png
+        └── test/<Classe>/*.png
+
+    Sem labels.csv — as pastas de classe por split são a fonte da verdade
+    para a ordem das classes no treinamento (BALAFF-01/02).
+    """
     print("\n" + "="*60)
-    print("DOWNLOAD: AFFECTNET")
+    print("DOWNLOAD: BALANCED-AFFECTNET")
     print("="*60)
     
-    url = "https://www.kaggle.com/api/v1/datasets/download/mstjebashazida/affectnet"
-    zip_path = p.DATASET_ROOT / "affectnet.zip"
+    url = "https://www.kaggle.com/api/v1/datasets/download/dollyprajapati182/balanced-affectnet"
+    affectnet_dir = p.DATASET_ROOT / "balanced-affectnet"
     
-    if not download_file(url, zip_path, "AffectNet Dataset"):
+    # Idempotente: se a pasta alvo existe, não re-baixar (mesma convenção do download_rwf2000)
+    if affectnet_dir.exists():
+        print(f"[SKIP] Diretório já existe: {affectnet_dir}")
+        return True
+    
+    zip_path = p.DATASET_ROOT / "balanced-affectnet.zip"
+    
+    if not download_file(url, zip_path, "Balanced-AffectNet Dataset"):
         return False
     
-    # AffectNet tem estrutura特殊的: 'archive (3)/Train' e 'archive (3)/Test'
-    if not extract_zip(zip_path, p.DATASET_ROOT, delete_after=True):
+    if not extract_zip(zip_path, affectnet_dir, delete_after=True):
         return False
     
-    # Mover para estrutura correta
-    archive_dir = p.DATASET_ROOT / "archive (3)"
-    if archive_dir.exists():
-        affectnet_dir = p.DATASET_ROOT / "AffectNet"
-        affectnet_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Mover Train e Test
-        train_src = archive_dir / "Train"
-        test_src = archive_dir / "Test"
-        
-        if train_src.exists():
-            shutil.move(str(train_src), str(affectnet_dir / "Train"))
-            print(f"[OK] Movido: {train_src} -> {affectnet_dir / 'Train'}")
-        
-        if test_src.exists():
-            shutil.move(str(test_src), str(affectnet_dir / "Test"))
-            print(f"[OK] Movido: {test_src} -> {affectnet_dir / 'Test'}")
-        
-        # Remover diretório archive
-        shutil.rmtree(str(archive_dir))
-        print(f"[OK] Removido: {archive_dir}")
+    # Enumerar e logar os nomes reais das pastas de classe por split
+    # (fonte da verdade para a ordem das classes no treinamento).
+    print("\n[INFO] Classes por split (ordenadas):")
+    for split in ["train", "val", "test"]:
+        split_dir = affectnet_dir / split
+        if not split_dir.exists():
+            print(f"[AVISO] Split não encontrado: {split_dir}")
+            continue
+        classes = sorted(d.name for d in split_dir.iterdir() if d.is_dir())
+        print(f"  {split}: {len(classes)} classes -> {', '.join(classes)}")
     
     return True
 

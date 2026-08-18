@@ -242,7 +242,8 @@ def preprocess_dataset(
     processed_data_root: str = None,
     num_frames: int = 16,
     target_size: Tuple[int, int] = (112, 112),
-    normalize: bool = True
+    normalize: bool = True,
+    max_workers: Optional[int] = None
 ):
     """
     Pré-processa todo o dataset: extrai frames de todos os vídeos.
@@ -253,6 +254,7 @@ def preprocess_dataset(
         num_frames: Número de frames por vídeo
         target_size: Tamanho (altura, largura) para redimensionar
         normalize: Se True, normaliza valores para [0, 1]
+        max_workers: Número máximo de workers paralelos. Se None, usa o padrão de process_videos
     """
     if raw_data_root is None:
         raw_data_root = str(p.RAW_DATA_ROOT)
@@ -271,7 +273,8 @@ def preprocess_dataset(
             violent_output,
             num_frames=num_frames,
             target_size=target_size,
-            normalize=normalize
+            normalize=normalize,
+            max_workers=max_workers
         )
     else:
         print(f"Diretório não encontrado: {violent_input}")
@@ -286,7 +289,8 @@ def preprocess_dataset(
             non_violent_output,
             num_frames=num_frames,
             target_size=target_size,
-            normalize=normalize
+            normalize=normalize,
+            max_workers=max_workers
         )
     else:
         print(f"Diretório não encontrado: {non_violent_input}")

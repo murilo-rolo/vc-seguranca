@@ -45,3 +45,15 @@ python train_cnn3d.py --stage both --pretrained --epochs 50
 - **Backbones disponíveis**: r3d_18, r2plus1d_18, mc3_18
 - **Pré-treinamento**: Kinetics400 (ImageNet weights)
 - **Fine-tuning**: Transfer learning com backbone congelado ou não
+
+> A CNN 3D é o **backbone de vídeo padrão** do modelo multimodal (`--video_backbone cnn3d`); o checkpoint de fine-tuning em `models/cnn3d/weights/rwf2000/best_model.pth` é usado automaticamente no treinamento multimodal, na avaliação (`--model video`, `--model multimodal`) e na inferência em tempo real.
+
+## Avaliação
+
+```bash
+python run_evaluation.py \
+    --model cnn3d \
+    --model_path models/cnn3d/weights/rwf2000/best_model.pth
+```
+
+As métricas, curvas ROC/PR e o resumo são salvos em `results/cnn3d/` (`metrics/`, `evaluation_summary.json`). O `--all` também inclui robustez a distorções, performance (FPS/latência) e análise de limitações.

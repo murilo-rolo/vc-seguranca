@@ -3,14 +3,14 @@ Exemplo de uso do módulo de Fusão Multimodal.
 
 Este script demonstra como:
 1. Carregar dados multimodais
-2. Criar e usar o modelo multimodal
+2. Criar e usar o modelo multimodal (cross-attention)
 3. Treinar e avaliar
 """
 
 import torch
 from src.models.multimodal_risk import create_multimodal_model
 from src.datasets.multimodal_dataset import get_multimodal_dataloaders
-from src.models.resnet_lstm import create_model as create_video_model
+from src.models.cnn3d_risk import create_cnn3d_model
 from src import paths as p
 
 
@@ -47,32 +47,32 @@ def example_load_data():
 
 
 def example_create_model():
-    """Exemplo de criação de modelo multimodal."""
+    """Exemplo de criação de modelo multimodal com cross-attention."""
     print("\n" + "=" * 60)
-    print("Exemplo 2: Criar Modelo Multimodal")
+    print("Exemplo 2: Criar Modelo Multimodal (Cross-Attention)")
     print("=" * 60)
     
-    # Criar modelo com late fusion
+    # Criar modelo com cross-attention (única fusão suportada)
     model = create_multimodal_model(
-        video_feature_dim=256,
+        video_feature_dim=512,
         pose_feature_dim=99,
-        emotion_feature_dim=8,
+        emotion_feature_dim=128,
         num_frames=16,
-        fusion_method="late",
+        fusion_method="cross_attention",
         use_temporal_modeling=True,
         device="cpu"
     )
     
     print(f"Modelo criado:")
-    print(f"  Fusion method: late")
+    print(f"  Fusion method: cross_attention")
     print(f"  Temporal modeling: True")
     print(f"  Parâmetros: {sum(p.numel() for p in model.parameters()):,}")
     
-    # Testar forward pass
+    # Testar forward pass com clip token de vídeo (B, D_v)
     batch_size = 2
-    video_features = torch.randn(batch_size, 16, 256)  # (batch, T, D_v)
-    pose_features = torch.randn(batch_size, 16, 99)    # (batch, T, D_p)
-    emotion_features = torch.randn(batch_size, 16, 8)   # (batch, T, D_e)
+    video_features = torch.randn(batch_size, 512)       # (B, D_v) clip token
+    pose_features = torch.randn(batch_size, 16, 99)     # (B, T, D_p)
+    emotion_features = torch.randn(batch_size, 16, 128) # (B, T, D_e)
     
     with torch.no_grad():
         output = model(video_features, pose_features, emotion_features)
@@ -83,60 +83,28 @@ def example_create_model():
     print(f"  Probabilities: {torch.softmax(output, dim=1)}")
 
 
-def example_different_fusion_methods():
-    """Exemplo comparando diferentes métodos de fusão."""
-    print("\n" + "=" * 60)
-    print("Exemplo 3: Comparar Métodos de Fusão")
-    print("=" * 60)
-    
-    batch_size = 2
-    video_features = torch.randn(batch_size, 16, 256)
-    pose_features = torch.randn(batch_size, 16, 99)
-    emotion_features = torch.randn(batch_size, 16, 8)
-    
-    fusion_methods = ["early", "late", "attention"]
-    
-    for method in fusion_methods:
-        model = create_multimodal_model(
-            video_feature_dim=256,
-            pose_feature_dim=99,
-            emotion_feature_dim=8,
-            num_frames=16,
-            fusion_method=method,
-            use_temporal_modeling=True,
-            device="cpu"
-        )
-        
-        with torch.no_grad():
-            output = model(video_features, pose_features, emotion_features)
-        
-        num_params = sum(p.numel() for p in model.parameters())
-        print(f"\n{method.upper()} Fusion:")
-        print(f"  Parâmetros: {num_params:,}")
-        print(f"  Output shape: {output.shape}")
-
-
 def example_training_loop():
     """Exemplo de loop de treinamento simplificado."""
     print("\n" + "=" * 60)
-    print("Exemplo 4: Loop de Treinamento")
+    print("Exemplo 3: Loop de Treinamento")
     print("=" * 60)
     
     # Criar modelo
     model = create_multimodal_model(
-        video_feature_dim=256,
+        video_feature_dim=512,
         pose_feature_dim=99,
-        emotion_feature_dim=8,
+        emotion_feature_dim=128,
         num_frames=16,
-        fusion_method="late",
+        fusion_method="cross_attention",
         use_temporal_modeling=True,
         device="cpu"
     )
     
-    # Carregar modelo de vídeo
-    video_model = create_video_model(
-        num_frames=16,
-        hidden_size=256,
+    # Carregar backbone de vídeo CNN 3D (padrão)
+    video_model = create_cnn3d_model(
+        model_name="r2plus1d_18",
+        num_classes=2,
+        checkpoint_path=str(p.CNN3D_RWF2000_WEIGHTS / "best_model.pth"),
         device="cpu"
     )
     video_model.eval()
@@ -161,10 +129,9 @@ def example_training_loop():
     # Um batch de exemplo
     video, pose, emotion, labels = next(iter(train_loader))
     
-    # Extrair features de vídeo
+    # Extrair features de vídeo como clip token (B, D_v)
     with torch.no_grad():
-        video_features = video_model.get_features(video)  # (batch, D_v)
-        video_features = video_features.unsqueeze(1).repeat(1, 16, 1)  # (batch, T, D_v)
+        video_features = video_model.get_features(video)  # (B, D_v) clip token
     
     # Forward
     optimizer.zero_grad()
@@ -188,7 +155,6 @@ if __name__ == "__main__":
     try:
         example_load_data()
         example_create_model()
-        example_different_fusion_methods()
         example_training_loop()
         
         print("\n" + "=" * 60)
@@ -204,4 +170,3 @@ if __name__ == "__main__":
         print(f"\nErro inesperado: {e}")
         import traceback
         traceback.print_exc()
-

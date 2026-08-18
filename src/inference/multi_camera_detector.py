@@ -33,7 +33,7 @@ class MultiCameraRiskDetector:
         window_size: int = 16,
         risk_threshold: float = 0.8,
         consecutive_windows: int = 3,
-        use_cnn3d: bool = False,
+        use_cnn3d: bool = True,
         cnn3d_model_path: Optional[str] = None,
         device: str = "cuda" if torch.cuda.is_available() else "cpu"
     ):
@@ -48,7 +48,7 @@ class MultiCameraRiskDetector:
             window_size: Tamanho da janela temporal
             risk_threshold: Threshold de probabilidade
             consecutive_windows: Janelas consecutivas para alerta
-            use_cnn3d: Se True, usa CNN 3D
+            use_cnn3d: Se True (padrão), usa CNN 3D; se False, ResNet-LSTM
             cnn3d_model_path: Caminho para modelo CNN 3D
             device: Device para inferência
         """

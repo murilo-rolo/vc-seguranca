@@ -120,6 +120,33 @@ class CNN3DRiskDetector(nn.Module):
             features = features.view(features.size(0), -1)
         features = self.dropout(features)
         return self.classifier(features)
+
+    def get_features(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Extrai o vetor clip-level antes da classificação (backbone -> flatten).
+
+        Retorna o vetor (batch, feature_dim) da penúltima camada, SEM dropout
+        e SEM classifier. Útil como clip token (B, D_v) para o modelo multimodal.
+
+        Detecta automaticamente:
+        - (batch, C, T, H, W) -> mantido (formato torchvision)
+        - (batch, T, C, H, W) -> convertido para (batch, C, T, H, W)
+
+        Args:
+            x: Tensor de entrada (batch, T, C, H, W) ou (batch, C, T, H, W)
+
+        Returns:
+            Features (batch, feature_dim)
+        """
+        if len(x.shape) == 5:
+            _b, dim1, dim2, _h, _w = x.shape
+            if dim2 == 3 and dim1 != 3:
+                x = x.permute(0, 2, 1, 3, 4)
+
+        features = self.backbone(x)
+        if len(features.shape) > 2:
+            features = features.view(features.size(0), -1)
+        return features
         
         # Extrair features com backbone
         # Backbone retorna (batch, feature_dim, 1, 1, 1) após pooling
