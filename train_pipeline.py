@@ -25,7 +25,7 @@ import argparse
 import subprocess
 import sys
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 import os
 
 from src import paths as p
@@ -210,20 +210,17 @@ class TrainingPipeline:
         
         return self.run_command(cmd, "Treinamento EmotionNet", required=False)
     
-    def train_cnn3d(self, stage: str, dataset: str, epochs: int = 50, pretrained_path: Optional[str] = None, **kwargs) -> bool:
-        """Treina modelo CNN 3D."""
-        if stage == "pretrain":
-            model_path = p.CNN3D_UCF101_WEIGHTS / "best_model.pth"
-        else:
-            model_path = p.CNN3D_RWF2000_WEIGHTS / "best_model.pth"
-        
+    def train_cnn3d(self, epochs: int = 50, **kwargs) -> bool:
+        """Treina modelo CNN 3D (fine-tuning RWF-2000, backbone Kinetics400)."""
+        model_path = p.CNN3D_WEIGHTS / "best_model.pth"
+
         # Verificar se já existe
         if model_path.exists() and not self.force_retrain:
-            print(f"\n⚠️  Modelo CNN 3D ({stage}) já existe em {model_path}")
+            print(f"\n⚠️  Modelo CNN 3D já existe em {model_path}")
             try:
                 response = input("Deseja treinar novamente? (s/n): ").lower()
                 if response != 's':
-                    print(f"⏭️  Pulando treinamento de CNN 3D ({stage})")
+                    print("⏭️  Pulando treinamento de CNN 3D")
                     return True
             except (EOFError, KeyboardInterrupt):
                 print("Ambiente não interativo. Pulando treinamento (use --force_retrain para forçar)")
@@ -231,13 +228,8 @@ class TrainingPipeline:
         
         cmd = [
             sys.executable, "train_cnn3d.py",
-            "--stage", stage,
-            "--dataset", dataset,
             "--epochs", str(epochs),
         ]
-        
-        if pretrained_path:
-            cmd.extend(["--pretrained_path", pretrained_path])
         
         if "model_name" in kwargs:
             cmd.extend(["--model_name", kwargs["model_name"]])
@@ -246,7 +238,7 @@ class TrainingPipeline:
         if "device" in kwargs:
             cmd.extend(["--device", kwargs["device"]])
         
-        return self.run_command(cmd, f"Treinamento CNN 3D ({stage})", required=False)
+        return self.run_command(cmd, "Treinamento CNN 3D", required=False)
     
     def train_multimodal(self, epochs: int = 50, video_backbone: str = "cnn3d", **kwargs) -> bool:
         """Treina modelo multimodal."""
@@ -266,7 +258,7 @@ class TrainingPipeline:
         
         # Verificar modelos base
         if video_backbone == "cnn3d":
-            video_model_path = p.CNN3D_RWF2000_WEIGHTS / "best_model.pth"
+            video_model_path = p.CNN3D_WEIGHTS / "best_model.pth"
             if not video_model_path.exists():
                 print(f"❌ Modelo CNN 3D não encontrado em {video_model_path}")
                 print("   Execute treinamento de CNN 3D primeiro (train_pipeline.py --cnn3d)")
@@ -328,22 +320,8 @@ class TrainingPipeline:
         
         # 3. Treinar CNN 3D (necessária para o multimodal com backbone cnn3d default)
         if not skip_cnn3d:
-            # Pré-treinamento em UCF101
-            ucf101_path = kwargs.get("ucf101_path", "dataset/UCF101")
-            if Path(ucf101_path).exists():
-                if not self.train_cnn3d("pretrain", "ucf101", **kwargs):
-                    print("⚠️  Falha no pré-treinamento de CNN 3D (continuando)")
-                
-                # Fine-tuning em RWF-2000
-                pretrained_path = str(p.CNN3D_UCF101_WEIGHTS / "best_model.pth")
-                if Path(pretrained_path).exists():
-                    if not self.train_cnn3d("finetune", "rwf2000", pretrained_path=pretrained_path, **kwargs):
-                        print("⚠️  Falha no fine-tuning de CNN 3D (continuando)")
-            else:
-                print(f"\n⏭️  Dataset UCF101 não encontrado em {ucf101_path}")
-                print("   Pulando treinamento de CNN 3D")
-                print("   (o multimodal com --video_backbone cnn3d exigirá o checkpoint em")
-                print(f"    {p.CNN3D_RWF2000_WEIGHTS / 'best_model.pth'} — use --video_backbone resnet_lstm para usar ResNet-LSTM)")
+            if not self.train_cnn3d(**kwargs):
+                print("⚠️  Falha no treinamento de CNN 3D (continuando)")
         else:
             print("\n⏭️  Pulando treinamento de CNN 3D (--skip_cnn3d)")
             if kwargs.get("video_backbone", "cnn3d") == "cnn3d":
@@ -447,8 +425,6 @@ Exemplos de uso:
         # Caminhos de datasets
     parser.add_argument("--affectnet_path", type=str, default=None,
                        help="Caminho para dataset AffectNet")
-    parser.add_argument("--ucf101_path", type=str, default=None,
-                       help="Caminho para dataset UCF101")
     parser.add_argument("--project_root", type=str, default=None,
                        help="Diretório raiz do projeto")
     
@@ -458,8 +434,6 @@ Exemplos de uso:
             args.affectnet_path = str(p.DATASET_ROOT / "balanced-affectnet")
         else:
             args.affectnet_path = str(p.AFFECTNET_ROOT)
-    if args.ucf101_path is None:
-        args.ucf101_path = str(p.UCF101_ROOT)
     if args.project_root is None:
         args.project_root = str(p.PROJECT_ROOT)
     
@@ -473,7 +447,6 @@ Exemplos de uso:
         "learning_rate": args.learning_rate,
         "device": args.device,
         "affectnet_path": args.affectnet_path,
-        "ucf101_path": args.ucf101_path,
         "video_backbone": args.video_backbone,
     }
     
@@ -489,11 +462,7 @@ Exemplos de uso:
         if not args.skip_emotion:
             pipeline.train_emotion_net(args.affectnet_path, **kwargs)
         if not args.skip_cnn3d:
-            if Path(args.ucf101_path).exists():
-                pipeline.train_cnn3d("pretrain", "ucf101", **kwargs)
-                pretrained_path = str(p.CNN3D_UCF101_WEIGHTS / "best_model.pth")
-                if Path(pretrained_path).exists():
-                    pipeline.train_cnn3d("finetune", "rwf2000", pretrained_path=pretrained_path, **kwargs)
+            pipeline.train_cnn3d(**kwargs)
     elif args.multimodal:
         pipeline.train_multimodal(**kwargs)
     elif args.resnet_lstm:
@@ -501,11 +470,7 @@ Exemplos de uso:
     elif args.emotion:
         pipeline.train_emotion_net(args.affectnet_path, **kwargs)
     elif args.cnn3d:
-        if Path(args.ucf101_path).exists():
-            pipeline.train_cnn3d("pretrain", "ucf101", **kwargs)
-            pretrained_path = str(p.CNN3D_UCF101_WEIGHTS / "best_model.pth")
-            if Path(pretrained_path).exists():
-                pipeline.train_cnn3d("finetune", "rwf2000", pretrained_path=pretrained_path, **kwargs)
+        pipeline.train_cnn3d(**kwargs)
     else:
         parser.print_help()
         print("\n❌ Nenhum modo de execução especificado. Use --all, --base_models, --multimodal, etc.")

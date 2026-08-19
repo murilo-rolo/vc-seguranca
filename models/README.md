@@ -52,8 +52,8 @@ RESNET_LSTM_WEIGHTS = MODELS_BASE / "resnet_lstm" / "weights"
 EMOTION_CNN_WEIGHTS = MODELS_BASE / "emotion_cnn" / "weights"
 
 # CNN 3D
-CNN3D_UCF101_WEIGHTS = MODELS_BASE / "cnn3d" / "weights" / "ucf101"
-CNN3D_RWF2000_WEIGHTS = MODELS_BASE / "cnn3d" / "weights" / "rwf2000"
+CNN3D_WEIGHTS = MODELS_BASE / "cnn3d" / "weights"
+CNN3D_EXPERIMENTS = MODELS_BASE / "cnn3d" / "experiments"
 
 # Multimodal
 MULTIMODAL_WEIGHTS = MODELS_BASE / "multimodal" / "weights"

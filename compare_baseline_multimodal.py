@@ -207,7 +207,7 @@ def main():
 
     # Carregar modelo de vídeo para multimodal (conforme backbone gravado no checkpoint)
     if video_backbone == "cnn3d":
-        video_ckpt_path = args.video_model_path or str(p.CNN3D_RWF2000_WEIGHTS / "best_model.pth")
+        video_ckpt_path = args.video_model_path or str(p.CNN3D_WEIGHTS / "best_model.pth")
         video_ckpt = torch.load(video_ckpt_path, map_location=device)
         video_model_name = video_ckpt.get('model_name') or video_ckpt.get('backbone') or "r2plus1d_18"
         video_model = create_cnn3d_model(

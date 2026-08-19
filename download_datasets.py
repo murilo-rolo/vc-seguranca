@@ -4,15 +4,12 @@ Script unificado para download e preparação de datasets.
 
 Este script baixa e prepara os datasets necessários para o projeto:
 - RWF-2000: Dataset de violência em vídeos
-- UCF101: Dataset de reconhecimento de ações (filtrado para 9 classes)
 - AffectNet (balanced): Dataset de reconhecimento de emoções (dollyprajapati182/balanced-affectnet)
 
 Uso:
     python download_datasets.py --all              # Baixar tudo
     python download_datasets.py --rwf2000          # Baixar apenas RWF-2000
-    python download_datasets.py --ucf101           # Baixar + filtrar UCF101
     python download_datasets.py --affectnet        # Baixar apenas AffectNet
-    python download_datasets.py --filter-ucf101    # Apenas filtrar UCF101 existente
 """
 
 import argparse
@@ -249,37 +246,6 @@ def download_rwf2000() -> bool:
     return extract_zip(zip_path, p.DATASET_ROOT, delete_after=True)
 
 
-def download_ucf101(filter_classes: bool = True) -> bool:
-    """
-    Baixa e extrai o dataset UCF101.
-    
-    Args:
-        filter_classes: Se True, filtra para 9 classes relevantes
-    """
-    print("\n" + "="*60)
-    print("DOWNLOAD: UCF101")
-    print("="*60)
-    
-    url = "https://www.kaggle.com/api/v1/datasets/download/matthewjansen/ucf101-action-recognition"
-    zip_path = p.DATASET_ROOT / "ucf101-action-recognition.zip"
-    
-    if not download_file(url, zip_path, "UCF101 Action Recognition"):
-        return False
-    
-    if not extract_zip(zip_path, p.UCF101_ROOT, delete_after=True):
-        return False
-    
-    if filter_classes:
-        print("\n[INFO] Filtrando classes do UCF101...")
-        if filter_ucf101_classes():
-            print("[OK] UCF101 filtrado com sucesso!")
-        else:
-            print("[AVISO] Falha ao filtrar UCF101")
-            return False
-    
-    return True
-
-
 def download_affectnet() -> bool:
     """
     Baixa e extrai o dataset balanced-affectnet.
@@ -323,115 +289,6 @@ def download_affectnet() -> bool:
             continue
         classes = sorted(d.name for d in split_dir.iterdir() if d.is_dir())
         print(f"  {split}: {len(classes)} classes -> {', '.join(classes)}")
-    
-    return True
-
-
-def filter_ucf101_classes() -> bool:
-    """
-    Filtra o dataset UCF101 mantendo apenas 9 classes relevantes.
-    
-    Classes a manter:
-    - RELEVANTES (6): BoxingPunchingBag, BoxingSpeedBag, Fencing, Nunchucks, Punch, SumoWrestling
-    - OPCIONAIS SELECIONADAS (3): Archery, CliffDiving, MilitaryParade
-    
-    Returns:
-        True se sucesso, False caso contrário
-    """
-    print("\n" + "="*60)
-    print("FILTRO: UCF101 (9 classes relevantes)")
-    print("="*60)
-    
-    CLASSES_TO_KEEP = [
-        "BoxingPunchingBag",
-        "BoxingSpeedBag",
-        "Fencing",
-        "Nunchucks",
-        "Punch",
-        "SumoWrestling",
-        "Archery",
-        "CliffDiving",
-        "MilitaryParade"
-    ]
-    
-    SPLITS = ["train", "test", "val"]
-    dataset_root = p.UCF101_ROOT
-    
-    if not dataset_root.exists():
-        print(f"[ERRO] Dataset UCF101 não encontrado em: {dataset_root}")
-        return False
-    
-    # 1. Coletar todas as classes existentes
-    all_classes = set()
-    for split in SPLITS:
-        split_dir = dataset_root / split
-        if split_dir.exists():
-            for class_dir in split_dir.iterdir():
-                if class_dir.is_dir():
-                    all_classes.add(class_dir.name)
-    
-    classes_to_remove = [cls for cls in all_classes if cls not in CLASSES_TO_KEEP]
-    
-    print(f"\nClasses encontradas: {len(all_classes)}")
-    print(f"Classes a manter: {len(CLASSES_TO_KEEP)}")
-    print(f"Classes a remover: {len(classes_to_remove)}")
-    
-    if not classes_to_remove:
-        print("[INFO] Nenhuma classe para remover (dataset já filtrado)")
-        return True
-    
-    # 2. Filtrar arquivos CSV
-    print("\n[1/3] Filtrando arquivos CSV...")
-    for split in SPLITS:
-        csv_path = dataset_root / f"{split}.csv"
-        if csv_path.exists():
-            _filter_csv_file(csv_path, CLASSES_TO_KEEP)
-    
-    # 3. Remover diretórios das classes não desejadas
-    print("\n[2/3] Removendo diretórios das classes não desejadas...")
-    removed_count = 0
-    for split in SPLITS:
-        split_dir = dataset_root / split
-        if not split_dir.exists():
-            continue
-        
-        for class_dir in split_dir.iterdir():
-            if class_dir.is_dir() and class_dir.name in classes_to_remove:
-                try:
-                    shutil.rmtree(class_dir)
-                    removed_count += 1
-                    print(f"[OK] Removido: {split}/{class_dir.name}")
-                except Exception as e:
-                    print(f"[ERRO] Erro ao remover {class_dir}: {e}")
-    
-    print(f"[OK] Total de diretórios removidos: {removed_count}")
-    
-    # 4. Validar resultado
-    print("\n[3/3] Validando resultado...")
-    remaining_classes = set()
-    for split in SPLITS:
-        split_dir = dataset_root / split
-        if split_dir.exists():
-            for class_dir in split_dir.iterdir():
-                if class_dir.is_dir():
-                    remaining_classes.add(class_dir.name)
-    
-    extra_classes = remaining_classes - set(CLASSES_TO_KEEP)
-    missing_classes = set(CLASSES_TO_KEEP) - remaining_classes
-    
-    if extra_classes:
-        print(f"[AVISO] Classes extras encontradas: {sorted(extra_classes)}")
-    else:
-        print("[OK] Nenhuma classe extra encontrada")
-    
-    if missing_classes:
-        print(f"[AVISO] Classes esperadas não encontradas: {sorted(missing_classes)}")
-    else:
-        print("[OK] Todas as classes esperadas estão presentes")
-    
-    print(f"\nClasses mantidas ({len(remaining_classes)}):")
-    for cls in sorted(remaining_classes):
-        print(f"  - {cls}")
     
     return True
 
@@ -490,14 +347,8 @@ Exemplos de uso:
   # Baixar apenas RWF-2000
   python download_datasets.py --rwf2000
 
-  # Baixar UCF101 (sempre filtra para 9 classes)
-  python download_datasets.py --ucf101
-
   # Baixar AffectNet
   python download_datasets.py --affectnet
-
-  # Apenas filtrar UCF101 existente
-  python download_datasets.py --filter-ucf101
         """
     )
     
@@ -506,19 +357,15 @@ Exemplos de uso:
                        help="Baixar todos os datasets")
     parser.add_argument("--rwf2000", action="store_true",
                        help="Baixar dataset RWF-2000")
-    parser.add_argument("--ucf101", action="store_true",
-                       help="Baixar dataset UCF101 (filtra automaticamente)")
     parser.add_argument("--affectnet", action="store_true",
                        help="Baixar dataset AffectNet")
-    parser.add_argument("--filter-ucf101", action="store_true",
-                       help="Apenas filtrar UCF101 existente (sem download)")
     
     args = parser.parse_args()
     
     # Verificar se pelo menos uma opção foi selecionada
-    if not any([args.all, args.rwf2000, args.ucf101, args.affectnet, args.filter_ucf101]):
+    if not any([args.all, args.rwf2000, args.affectnet]):
         parser.print_help()
-        print("\n[ERRO] Selecione pelo menos uma opção: --all, --rwf2000, --ucf101, --affectnet, --filter-ucf101")
+        print("\n[ERRO] Selecione pelo menos uma opção: --all, --rwf2000, --affectnet")
         return 1
     
     print("="*60)
@@ -535,8 +382,6 @@ Exemplos de uso:
     if args.all:
         if not download_rwf2000():
             success = False
-        if not download_ucf101(filter_classes=True):
-            success = False
         if not download_affectnet():
             success = False
     
@@ -545,17 +390,8 @@ Exemplos de uso:
         if not download_rwf2000():
             success = False
     
-    if args.ucf101:
-        if not download_ucf101(filter_classes=True):
-            success = False
-    
     if args.affectnet:
         if not download_affectnet():
-            success = False
-    
-    # Apenas filtrar
-    if args.filter_ucf101:
-        if not filter_ucf101_classes():
             success = False
     
     # Resumo

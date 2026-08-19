@@ -17,9 +17,8 @@ Uso:
     # Extrair frames RGB
     python run_preprocessing.py frames --num_frames 16
 
-    # Extrair keypoints de pose (UCF101 e/ou RWF-2000)
-    python run_preprocessing.py pose --dataset both --num_frames 16
-    python run_preprocessing.py pose --dataset rwf2000 --num_frames 16
+    # Extrair keypoints de pose (RWF-2000)
+    python run_preprocessing.py pose --num_frames 16
 
     # Extrair vetores de emoção (RWF-2000)
     python run_preprocessing.py emotion
@@ -41,7 +40,7 @@ def _check_dataset_root() -> bool:
     """Valida a existência do diretório raiz de datasets."""
     if not p.DATASET_ROOT.exists():
         print(f"Erro: Diretório de datasets não encontrado: {p.DATASET_ROOT}")
-        print("  Certifique-se de que os datasets estão em 'dataset/UCF101' e 'dataset/RWF-2000'")
+        print("  Certifique-se de que os datasets estão em 'dataset/RWF-2000'")
         return False
     return True
 
@@ -132,7 +131,7 @@ def cmd_frames(args):
 
 
 def cmd_pose(args):
-    """Extrai keypoints de pose (MediaPipe) dos datasets UCF101 e RWF-2000."""
+    """Extrai keypoints de pose (MediaPipe) do dataset RWF-2000."""
     if not _check_dataset_root():
         return
 
@@ -147,8 +146,6 @@ def cmd_pose(args):
     if args.num_frames is not None and args.num_frames <= 0:
         raise SystemExit("--num_frames deve ser um número positivo ou None para processar todos os frames")
 
-    from src.pose.extract_pose import process_dataset_for_pose
-
     p.POSE_ROOT.mkdir(parents=True, exist_ok=True)
 
     _print_header(
@@ -156,7 +153,7 @@ def cmd_pose(args):
         {
             "Dataset raiz": str(p.DATASET_ROOT),
             "Saída raiz": str(p.POSE_ROOT),
-            "Dataset": args.dataset,
+            "Dataset": "RWF-2000",
             "Número de frames": args.num_frames if args.num_frames else "Todos",
             "Confiança detecção": f"{args.min_detection_confidence} (range: 0.0-1.0)",
             "Confiança rastreamento": f"{args.min_tracking_confidence} (range: 0.0-1.0)",
@@ -176,32 +173,12 @@ def cmd_pose(args):
 
     print()
 
-    if args.dataset in ["ucf101", "both"]:
-        ucf101_path = p.DATASET_ROOT / "UCF101"
-        if ucf101_path.exists():
-            print("\n" + "=" * 60)
-            print("Processando UCF101...")
-            print("=" * 60)
-            process_dataset_for_pose(
-                dataset_root=str(ucf101_path),
-                output_root=str(p.POSE_ROOT),
-                dataset_name="ucf101",
-                num_frames=args.num_frames,
-                min_detection_confidence=args.min_detection_confidence,
-                min_tracking_confidence=args.min_tracking_confidence,
-                model_complexity=args.model_complexity
-            )
-        else:
-            print(f"\nAviso: Dataset UCF101 não encontrado em {ucf101_path}")
-            print("  Pulando processamento de UCF101...")
-
-    if args.dataset in ["rwf2000", "both"]:
-        _process_rwf2000_pose(
-            args.num_frames,
-            args.min_detection_confidence,
-            args.min_tracking_confidence,
-            args.model_complexity
-        )
+    _process_rwf2000_pose(
+        args.num_frames,
+        args.min_detection_confidence,
+        args.min_tracking_confidence,
+        args.model_complexity
+    )
 
     print("\n" + "=" * 60)
     print("Pré-processamento de pose concluído!")
@@ -288,7 +265,6 @@ def cmd_all(args):
         return
 
     from src.preprocessing import organize_rwf2000_dataset, preprocess_dataset
-    from src.pose.extract_pose import process_dataset_for_pose
 
     print("\n" + "=" * 60)
     print("PIPELINE COMPLETO DE PRÉ-PROCESSAMENTO")
@@ -321,29 +297,12 @@ def cmd_all(args):
     print("[3/4] Extraindo keypoints de pose...")
     print("=" * 50)
     p.POSE_ROOT.mkdir(parents=True, exist_ok=True)
-    if args.dataset in ["ucf101", "both"]:
-        ucf101_path = p.DATASET_ROOT / "UCF101"
-        if ucf101_path.exists():
-            print("\nProcessando UCF101...")
-            process_dataset_for_pose(
-                dataset_root=str(ucf101_path),
-                output_root=str(p.POSE_ROOT),
-                dataset_name="ucf101",
-                num_frames=args.num_frames,
-                min_detection_confidence=args.min_detection_confidence,
-                min_tracking_confidence=args.min_tracking_confidence,
-                model_complexity=args.model_complexity
-            )
-        else:
-            print(f"\nAviso: Dataset UCF101 não encontrado em {ucf101_path}")
-
-    if args.dataset in ["rwf2000", "both"]:
-        _process_rwf2000_pose(
-            args.num_frames,
-            args.min_detection_confidence,
-            args.min_tracking_confidence,
-            args.model_complexity
-        )
+    _process_rwf2000_pose(
+        args.num_frames,
+        args.min_detection_confidence,
+        args.min_tracking_confidence,
+        args.model_complexity
+    )
 
     # Etapa 4: Extrair emoções
     print("\n" + "=" * 50)
@@ -406,7 +365,7 @@ def build_parser() -> argparse.ArgumentParser:
         epilog="Exemplos:\n"
                "  python run_preprocessing.py organize\n"
                "  python run_preprocessing.py frames --num_frames 16\n"
-               "  python run_preprocessing.py pose --dataset both --num_frames 16\n"
+               "  python run_preprocessing.py pose --num_frames 16\n"
                "  python run_preprocessing.py emotion\n"
                "  python run_preprocessing.py all --num_frames 16\n"
     )
@@ -453,11 +412,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_pose = subparsers.add_parser(
         "pose",
         help="Extrai keypoints de pose (MediaPipe)",
-        description="Extrai keypoints de pose de vídeos dos datasets UCF101 e RWF-2000."
-    )
-    p_pose.add_argument(
-        "--dataset", type=str, choices=["ucf101", "rwf2000", "both"], default="both",
-        help="Dataset a processar: 'ucf101', 'rwf2000' ou 'both'"
+        description="Extrai keypoints de pose de vídeos do dataset RWF-2000."
     )
     p_pose.add_argument(
         "--num_frames", type=int, default=None,
@@ -537,10 +492,6 @@ def build_parser() -> argparse.ArgumentParser:
     p_all.add_argument(
         "--workers", type=int, default=max(1, int(os.cpu_count() / 4)),
         help="Número de workers paralelos para extração de frames (padrão: cpu_count/4)"
-    )
-    p_all.add_argument(
-        "--dataset", type=str, choices=["ucf101", "rwf2000", "both"], default="both",
-        help="Datasets para extração de pose: 'ucf101', 'rwf2000' ou 'both'"
     )
     p_all.add_argument(
         "--min_detection_confidence", type=float, default=0.5,

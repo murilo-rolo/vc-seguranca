@@ -672,23 +672,22 @@ def process_videos_for_pose(
 def process_dataset_for_pose(
     dataset_root: str,
     output_root: str,
-    dataset_name: str,  # "ucf101" ou "rwf2000"
+    dataset_name: str,  # "rwf2000"
     num_frames: Optional[int] = None,
     min_detection_confidence: float = 0.5,
     min_tracking_confidence: float = 0.5,
     model_complexity: int = 1
 ):
     """
-    Processa um dataset completo (UCF101 ou RWF-2000) para extrair pose.
-    
+    Processa um dataset completo para extrair pose.
+
     Estrutura esperada:
-    - UCF101: dataset/UCF101/train/<classe>/<video>.avi
     - RWF-2000: dataset/RWF-2000/train/<Fight|NonFight>/<video>.avi
-    
+
     Args:
-        dataset_root: Raiz do dataset (ex: "dataset/UCF101" ou "dataset/RWF-2000")
+        dataset_root: Raiz do dataset (ex: "dataset/RWF-2000")
         output_root: Raiz de saída (ex: "data/pose")
-        dataset_name: Nome do dataset ("ucf101" ou "rwf2000")
+        dataset_name: Nome do dataset ("rwf2000")
         num_frames: Número de frames a processar por vídeo
         min_detection_confidence: Confiança mínima para detecção
         min_tracking_confidence: Confiança mínima para rastreamento
@@ -697,74 +696,45 @@ def process_dataset_for_pose(
     dataset_path = Path(dataset_root)
     output_path = Path(output_root)
     
-    if dataset_name.lower() == "ucf101":
-        # Processar UCF101: estrutura por classe
-        train_dir = dataset_path / "train"
-        test_dir = dataset_path / "test"
-        
-        for split_dir, split_name in [(train_dir, "train"), (test_dir, "test")]:
-            if not split_dir.exists():
-                print(f"Diretório não encontrado: {split_dir}")
-                continue
-            
-            # Processar cada classe
-            for class_dir in split_dir.iterdir():
-                if not class_dir.is_dir():
-                    continue
-                
-                class_name = class_dir.name
-                output_class_dir = output_path / "ucf101" / split_name / class_name
-                
-                print(f"\nProcessando UCF101 - {split_name}/{class_name}...")
-                process_videos_for_pose(
-                    input_dir=class_dir,
-                    output_dir=output_class_dir,
-                    num_frames=num_frames,
-                    min_detection_confidence=min_detection_confidence,
-                    min_tracking_confidence=min_tracking_confidence,
-                    model_complexity=model_complexity
-                )
+    if dataset_name.lower() != "rwf2000":
+        raise ValueError(f"Dataset não suportado: {dataset_name}. Use 'rwf2000'")
+
+    # Processar RWF-2000: estrutura Fight/NonFight
+    train_dir = dataset_path / "train"
+    val_dir = dataset_path / "val"
     
-    elif dataset_name.lower() == "rwf2000":
-        # Processar RWF-2000: estrutura Fight/NonFight
-        train_dir = dataset_path / "train"
-        val_dir = dataset_path / "val"
+    for split_dir, split_name in [(train_dir, "train"), (val_dir, "val")]:
+        if not split_dir.exists():
+            print(f"Diretório não encontrado: {split_dir}")
+            continue
         
-        for split_dir, split_name in [(train_dir, "train"), (val_dir, "val")]:
-            if not split_dir.exists():
-                print(f"Diretório não encontrado: {split_dir}")
-                continue
-            
-            # Processar Fight (violent)
-            fight_dir = split_dir / "Fight"
-            if fight_dir.exists():
-                output_fight_dir = output_path / "rwf2000" / split_name / "violent"
-                print(f"\nProcessando RWF-2000 - {split_name}/Fight...")
-                process_videos_for_pose(
-                    input_dir=fight_dir,
-                    output_dir=output_fight_dir,
-                    num_frames=num_frames,
-                    min_detection_confidence=min_detection_confidence,
-                    min_tracking_confidence=min_tracking_confidence,
-                    model_complexity=model_complexity
-                )
-            
-            # Processar NonFight (non_violent)
-            nonfight_dir = split_dir / "NonFight"
-            if nonfight_dir.exists():
-                output_nonfight_dir = output_path / "rwf2000" / split_name / "non_violent"
-                print(f"\nProcessando RWF-2000 - {split_name}/NonFight...")
-                process_videos_for_pose(
-                    input_dir=nonfight_dir,
-                    output_dir=output_nonfight_dir,
-                    num_frames=num_frames,
-                    min_detection_confidence=min_detection_confidence,
-                    min_tracking_confidence=min_tracking_confidence,
-                    model_complexity=model_complexity
-                )
-    
-    else:
-        raise ValueError(f"Dataset não suportado: {dataset_name}. Use 'ucf101' ou 'rwf2000'")
+        # Processar Fight (violent)
+        fight_dir = split_dir / "Fight"
+        if fight_dir.exists():
+            output_fight_dir = output_path / "rwf2000" / split_name / "violent"
+            print(f"\nProcessando RWF-2000 - {split_name}/Fight...")
+            process_videos_for_pose(
+                input_dir=fight_dir,
+                output_dir=output_fight_dir,
+                num_frames=num_frames,
+                min_detection_confidence=min_detection_confidence,
+                min_tracking_confidence=min_tracking_confidence,
+                model_complexity=model_complexity
+            )
+        
+        # Processar NonFight (non_violent)
+        nonfight_dir = split_dir / "NonFight"
+        if nonfight_dir.exists():
+            output_nonfight_dir = output_path / "rwf2000" / split_name / "non_violent"
+            print(f"\nProcessando RWF-2000 - {split_name}/NonFight...")
+            process_videos_for_pose(
+                input_dir=nonfight_dir,
+                output_dir=output_nonfight_dir,
+                num_frames=num_frames,
+                min_detection_confidence=min_detection_confidence,
+                min_tracking_confidence=min_tracking_confidence,
+                model_complexity=model_complexity
+            )
     
     print("\nProcessamento do dataset concluído!")
 

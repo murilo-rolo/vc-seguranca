@@ -165,47 +165,6 @@ class CNN3DRiskDetector(nn.Module):
         
         return logits
     
-    def load_pretrained_ucf101(
-        self,
-        checkpoint_path: str,
-        strict: bool = True
-    ):
-        """
-        Carrega pesos pré-treinados em UCF101.
-        
-        Args:
-            checkpoint_path: Caminho para checkpoint pré-treinado
-            strict: Se True, requer que todas as chaves correspondam
-        """
-        checkpoint = torch.load(checkpoint_path, map_location='cpu')
-        
-        # Lidar com diferentes formatos de checkpoint
-        if isinstance(checkpoint, dict):
-            if 'model_state_dict' in checkpoint:
-                state_dict = checkpoint['model_state_dict']
-            elif 'state_dict' in checkpoint:
-                state_dict = checkpoint['state_dict']
-            else:
-                state_dict = checkpoint
-        else:
-            state_dict = checkpoint
-        
-        # Carregar pesos do backbone (ignorar classifier se existir)
-        backbone_state_dict = {}
-        for key, value in state_dict.items():
-            if not key.startswith('classifier'):
-                # Remover prefixo 'backbone.' se existir
-                new_key = key.replace('backbone.', '')
-                backbone_state_dict[new_key] = value
-        
-        try:
-            self.backbone.load_state_dict(backbone_state_dict, strict=strict)
-            print(f"✓ Pesos do backbone carregados de: {checkpoint_path}")
-        except Exception as e:
-            print(f"⚠ Aviso ao carregar pesos: {e}")
-            print("  Tentando carregar sem strict matching...")
-            self.backbone.load_state_dict(backbone_state_dict, strict=False)
-    
     def freeze_backbone_layers(self, num_layers: int = -1):
         """
         Congela as primeiras N camadas do backbone.
@@ -265,18 +224,14 @@ def create_cnn3d_model(
     
     # Carregar checkpoint customizado se fornecido
     if checkpoint_path is not None:
-        if "ucf101" in checkpoint_path.lower() or "ucf" in checkpoint_path.lower():
-            model.load_pretrained_ucf101(checkpoint_path)
+        checkpoint = torch.load(checkpoint_path, map_location=device)
+        if 'model_state_dict' in checkpoint:
+            model.load_state_dict(checkpoint['model_state_dict'])
+        elif 'state_dict' in checkpoint:
+            model.load_state_dict(checkpoint['state_dict'])
         else:
-            # Carregar checkpoint genérico
-            checkpoint = torch.load(checkpoint_path, map_location=device)
-            if 'model_state_dict' in checkpoint:
-                model.load_state_dict(checkpoint['model_state_dict'])
-            elif 'state_dict' in checkpoint:
-                model.load_state_dict(checkpoint['state_dict'])
-            else:
-                model.load_state_dict(checkpoint)
-            print(f"✓ Checkpoint carregado de: {checkpoint_path}")
+            model.load_state_dict(checkpoint)
+        print(f"✓ Checkpoint carregado de: {checkpoint_path}")
     
     model = model.to(device)
     return model

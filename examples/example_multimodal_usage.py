@@ -104,7 +104,7 @@ def example_training_loop():
     video_model = create_cnn3d_model(
         model_name="r2plus1d_18",
         num_classes=2,
-        checkpoint_path=str(p.CNN3D_RWF2000_WEIGHTS / "best_model.pth"),
+        checkpoint_path=str(p.CNN3D_WEIGHTS / "best_model.pth"),
         device="cpu"
     )
     video_model.eval()

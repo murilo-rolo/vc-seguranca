@@ -11,7 +11,6 @@ Este script demonstra como:
 import torch
 from src.models.cnn3d_risk import create_cnn3d_model
 from src.datasets.video3d_dataset import (
-    get_ucf101_dataloaders,
     get_rwf2000_3d_dataloaders
 )
 from src import paths as p
@@ -22,20 +21,6 @@ def example_create_model():
     print("=" * 60)
     print("Exemplo 1: Criar Modelo CNN 3D")
     print("=" * 60)
-    
-    # Criar modelo para UCF101 (9 classes relevantes após filtro)
-    model_ucf101 = create_cnn3d_model(
-        model_name="r2plus1d_18",
-        num_classes=9,
-        pretrained=True,
-        pretrained_dataset="kinetics400",
-        device="cpu"
-    )
-    
-    print(f"Modelo UCF101:")
-    print(f"  Modelo: R(2+1)D-18")
-    print(f"  Classes: 101")
-    print(f"  Parâmetros: {sum(p.numel() for p in model_ucf101.parameters()):,}")
     
     # Criar modelo para RWF-2000 (2 classes)
     model_rwf2000 = create_cnn3d_model(
@@ -95,8 +80,8 @@ def example_load_pretrained():
         device="cpu"
     )
     
-    # Carregar checkpoint pré-treinado em UCF101
-    checkpoint_path = str(p.CNN3D_ROOT / "ucf101" / "best_model.pth")
+    # Carregar checkpoint de fine-tuning em RWF-2000
+    checkpoint_path = str(p.CNN3D_WEIGHTS / "best_model.pth")
     
     try:
         model_with_pretrained = create_cnn3d_model(
@@ -109,7 +94,7 @@ def example_load_pretrained():
         print(f"✓ Modelo carregado de: {checkpoint_path}")
     except FileNotFoundError:
         print(f"⚠ Checkpoint não encontrado: {checkpoint_path}")
-        print("  Execute primeiro: python train_cnn3d.py --stage pretrain")
+        print("  Execute primeiro: python train_cnn3d.py")
 
 
 def example_dataloader():
@@ -117,30 +102,6 @@ def example_dataloader():
     print("\n" + "=" * 60)
     print("Exemplo 4: Usar com DataLoaders")
     print("=" * 60)
-    
-    try:
-        # UCF101
-        train_loader, test_loader = get_ucf101_dataloaders(
-            dataset_root=str(p.UCF101_ROOT),
-            batch_size=2,
-            num_frames=16,
-            clip_size=(112, 112),
-            num_workers=0  # 0 para evitar problemas em exemplo
-        )
-        
-        print(f"UCF101 DataLoaders:")
-        print(f"  Train batches: {len(train_loader)}")
-        print(f"  Test batches: {len(test_loader)}")
-        
-        # Obter um batch
-        clip, label = next(iter(train_loader))
-        print(f"\nBatch shape: {clip.shape}")  # (batch, T, C, H, W)
-        print(f"Label shape: {label.shape}")
-        print(f"Label: {label.tolist()}")
-        
-    except FileNotFoundError:
-        print(f"⚠ Dataset UCF101 não encontrado em {p.UCF101_ROOT}")
-        print("  Certifique-se de que o dataset está no local correto")
     
     try:
         # RWF-2000

@@ -9,7 +9,7 @@ Uso:
     python run_evaluation.py --model multimodal --model_path results/multimodal/best_model.pth
     
     # Avaliar CNN 3D
-    python run_evaluation.py --model cnn3d --model_path models/cnn3d/weights/rwf2000/best_model.pth
+    python run_evaluation.py --model cnn3d --model_path models/cnn3d/weights/best_model.pth
     
     # Avaliar sub-modelo de vídeo (ResNet-LSTM) independentemente
     python run_evaluation.py --model video --model_path models/resnet_lstm/weights/best_model.pth --metrics
@@ -216,7 +216,7 @@ def load_model(
 
         # Backbone de vídeo para extrair o clip token dos frames do dataloader
         if video_backbone_ckpt == "cnn3d":
-            vckpt_path = video_model_path or str(p.CNN3D_RWF2000_WEIGHTS / "best_model.pth")
+            vckpt_path = video_model_path or str(p.CNN3D_WEIGHTS / "best_model.pth")
             vckpt = torch.load(vckpt_path, map_location=device)
             vmodel_name = vckpt.get('model_name') or vckpt.get('backbone') or "r2plus1d_18"
             video_model = create_cnn3d_model(
@@ -320,7 +320,7 @@ def _resolve_sub_model_path(args, model_type: str) -> str:
 
     defaults = {
         # video: CNN 3D (padrão) ou ResNet-LSTM, conforme --video_backbone
-        "video": (str(p.CNN3D_RWF2000_WEIGHTS / "best_model.pth")
+        "video": (str(p.CNN3D_WEIGHTS / "best_model.pth")
                   if getattr(args, "video_backbone", "cnn3d") == "cnn3d"
                   else str(p.RESNET_LSTM_WEIGHTS / "best_model.pth")),
         # pose: branch de pose do checkpoint multimodal (--model_path)
@@ -586,7 +586,7 @@ def main():
         "--video_model_path",
         type=str,
         default=None,
-        help="Checkpoint do sub-modelo de vídeo (padrão: models/cnn3d/weights/rwf2000/best_model.pth se --video_backbone cnn3d)"
+        help="Checkpoint do sub-modelo de vídeo (padrão: models/cnn3d/weights/best_model.pth se --video_backbone cnn3d)"
     )
     parser.add_argument(
         "--pose_model_path",

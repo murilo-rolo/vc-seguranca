@@ -151,8 +151,7 @@ class RealTimeRiskDetector:
                 checkpoint = torch.load(cnn3d_model_path, map_location=self.device)
                 model_name = checkpoint.get('model_name') or checkpoint.get('backbone') or "r2plus1d_18"
                 # Mesma tolerância de train_cnn3d.py: create_cnn3d_model carrega
-                # checkpoint UCF101 (9 classes) via backbone-only (strict=False) e
-                # checkpoint RWF-2000 (2 classes) via state_dict completo.
+                # o checkpoint RWF-2000 (2 classes) via state_dict completo.
                 self.video_model = create_cnn3d_model(
                     model_name=model_name,
                     num_classes=2,

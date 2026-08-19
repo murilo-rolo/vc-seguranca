@@ -44,7 +44,7 @@ Este projeto está sendo desenvolvido como parte de um projeto de pesquisa em Vi
   - EmotionNet (DeiT-Small Vision Transformer) para classificação de emoções faciais
   - MultimodalRiskDetector para fusão de múltiplas modalidades
 - **Estratégias de Fusão**: Early Fusion, Late Fusion e Attention-based Fusion
-- **Transfer Learning**: Utiliza pesos pré-treinados (ImageNet, Kinetics400, UCF101)
+- **Transfer Learning**: Utiliza pesos pré-treinados (ImageNet, Kinetics400)
 - **Pipeline Completo**: Pré-processamento, extração de features, treinamento, avaliação e inferência em tempo real
 - **Detecção em Tempo Real**: Suporte para webcam e streams RTSP
 - **Sistema de Alertas**: Threshold configurável e detecção de janelas consecutivas
@@ -53,7 +53,7 @@ Este projeto está sendo desenvolvido como parte de um projeto de pesquisa em Vi
 - **Métricas Detalhadas**: Gera relatórios completos de avaliação
 - **Pipeline de Avaliação Experimental**: Métricas, robustez a distorções, performance (FPS/latência) e análise de limitações
 - **Treinamento Robusto do EmotionNet**: Focal Loss, WeightedRandomSampler, warmup + cosine annealing, early stopping e resume de treino
-- **Download Automático de Datasets**: `download_datasets.py` baixa RWF-2000, UCF101 e AffectNet via Kaggle API
+- **Download Automático de Datasets**: `download_datasets.py` baixa RWF-2000 e AffectNet via Kaggle API
 - **Código modular**: Funções de treino/validação centralizadas em `src/training/utils.py`
 - **Gerenciamento Centralizado de Caminhos**: `src/paths.py` detecta automaticamente o ambiente (local ou Google Colab) e configura todos os diretórios do projeto
 - **Organização de Modelos por Pasta**: Pesos e experimentos organizados em `models/<modelo>/weights/` e `models/<modelo>/experiments/`
@@ -82,28 +82,6 @@ dataset/RWF-2000/
     └── NonFight/
 ```
 
-### Dataset de Pré-treinamento: UCF101
-
-**UCF101** - Usado para pré-treinamento de modelos CNN 3D:
-
-- **9 classes relevantes** selecionadas para detecção de violência:
-  - BoxingPunchingBag, BoxingSpeedBag, Fencing, Nunchucks, Punch, SumoWrestling
-  - Archery, CliffDiving, MilitaryParade (opcionais)
-- Filtrado de 101 para 9 classes para otimizar treinamento
-- Disponível em: [UCF101 Dataset](https://www.crcv.ucf.edu/data/UCF101.php)
-
-**Estrutura esperada:**
-```
-dataset/UCF101/
-├── train/
-│   ├── BoxingPunchingBag/
-│   ├── BoxingSpeedBag/
-│   ├── Fencing/
-│   └── ... (9 classes)
-├── test/
-└── val/
-```
-
 ### Dataset de Emoção: Balanced-AffectNet
 
 **Balanced-AffectNet** - Usado para treinar o modelo de reconhecimento de emoções faciais:
@@ -128,23 +106,18 @@ dataset/balanced-affectnet/
 Os diretórios `dataset/` não são versionados no Git devido ao tamanho dos arquivos. Use o script `download_datasets.py` para baixar e preparar automaticamente todos os datasets via Kaggle API:
 
 ```bash
-# Baixar todos os datasets (RWF-2000 + UCF101 + AffectNet)
+# Baixar todos os datasets (RWF-2000 + AffectNet)
 python download_datasets.py --all
 
 # Baixar apenas um dataset
 python download_datasets.py --rwf2000
-python download_datasets.py --ucf101       # Filtra automaticamente para 9 classes
 python download_datasets.py --affectnet
-
-# Apenas filtrar um UCF101 já existente para as 9 classes relevantes
-python download_datasets.py --filter-ucf101
 ```
 
 **Recursos do script:**
 - Download com barra de progresso e retomada (pula arquivos já existentes)
 - Extração robusta de ZIPs: corrige nomes em UTF-8/Cirílico (ex.: vídeos do RWF-2000), evita path traversal e trunca nomes muito longos
 - Baixa o **balanced-affectnet** (`dollyprajapati182/balanced-affectnet`) já extraído na estrutura `{train,val,test}/<Classe>/*.png`
-- Filtra o UCF101 mantendo apenas as 9 classes relevantes (remove diretórios e filtra os CSVs)
 
 ## Arquitetura dos Modelos
 
@@ -190,10 +163,6 @@ Modelos 3D para reconhecimento de ações em vídeo:
 - **R3D-18**: ResNet 3D com convoluções 3D puras
 - **R(2+1)D-18**: ResNet com convoluções factorizadas (2D+1D)
 - **MC3-18**: Mixed Convolution 3D
-
-**Pipeline:**
-1. Pré-treinamento em UCF101 (9 classes relevantes)
-2. Fine-tuning em RWF-2000 (2 classes: violent/non-violent)
 
 ### 3. EmotionNet (Reconhecimento de Emoções)
 
@@ -317,9 +286,6 @@ Arquitetura multimodal que combina todas as modalidades:
    # RWF-2000 (obrigatório - dataset principal)
    python download_datasets.py --rwf2000
    
-   # UCF101 (opcional - para pré-treinamento CNN 3D)
-   python download_datasets.py --ucf101
-   
    # AffectNet (opcional - para treinar o EmotionNet)
    python download_datasets.py --affectnet
    
@@ -377,11 +343,10 @@ python -m src.preprocessing.extract_frames
 Extrai keypoints de pose usando MediaPipe:
 
 ```bash
-python run_preprocessing.py pose --dataset rwf2000 --num_frames 16
+python run_preprocessing.py pose --num_frames 16
 ```
 
 **Opções:**
-- `--dataset`: `rwf2000`, `ucf101` ou `both` (padrão: `both`)
 - `--num_frames`: Número de frames a processar por vídeo (None = todos)
 - `--min_detection_confidence`: Confiança mínima de detecção (padrão 0.5; 0.5-0.7 recomendado)
 - `--min_tracking_confidence`: Confiança mínima de rastreamento (padrão 0.5)
@@ -478,37 +443,22 @@ python train_emotion_model.py \
 
 O dataset de emoção é localizado automaticamente em `dataset/balanced-affectnet` (splits `train`/`val`; se ausente, o AffectNet legado em `dataset/AffectNet` é usado como fallback). O modelo é salvo em `models/emotion_cnn/weights/best_model.pth`.
 
-#### 2.3. Treinamento CNN 3D
+#### 2.3. Treinamento CNN 3D em RWF-2000 (2 classes)
 
-Pipeline de duas etapas: pré-treinamento + fine-tuning:
+O backbone é pré-treinado no **Kinetics400** (carregado automaticamente via torchvision) e o script faz o fine-tuning em RWF-2000:
 
-**Etapa 1: Pré-treinamento em UCF101 (9 classes)**
 ```bash
 python train_cnn3d.py \
-    --stage pretrain \
-    --epochs 50 \
-    --batch_size 8 \
-    --model_name r2plus1d_18
-```
-
-**Etapa 2: Fine-tuning em RWF-2000 (2 classes)**
-```bash
-python train_cnn3d.py \
-    --stage finetune \
-    --pretrained_path models/cnn3d/weights/ucf101/best_model.pth \
     --epochs 30 \
     --batch_size 8
 ```
 
 **Opções principais:**
-- `--stage`: `pretrain`, `finetune` ou `both` (obrigatório)
 - `--model_name`: `r3d_18`, `r2plus1d_18` (padrão) ou `mc3_18`
-- `--pretrained`: Usar pesos pré-treinados do Kinetics400 (apenas no pretrain)
-- `--pretrained_path`: Caminho para checkpoint UCF101 (para finetune)
-- `--freeze_backbone`: Congela o backbone durante o fine-tuning
+- `--freeze_backbone`: Congela o backbone durante o fine-tuning (treina apenas o classifier)
 - `--clip_size`: Tamanho do clipe H W (padrão: `112 112`)
 
-Os pesos são salvos em `models/cnn3d/weights/ucf101/best_model.pth` (pretrain) e `models/cnn3d/weights/rwf2000/best_model.pth` (fine-tuning).
+Os pesos são salvos em `models/cnn3d/weights/best_model.pth`.
 
 #### 2.4. Treinamento Multimodal (Modelo Principal)
 
@@ -524,7 +474,7 @@ python train_multimodal.py \
 **Parâmetros principais:**
 - `--use_temporal_modeling`: Usa LSTM para modelagem temporal de pose e emoção
 - `--video_backbone`: Backbone de vídeo do multimodal — `cnn3d` (padrão) ou `resnet_lstm`
-- `--video_model_path`: Caminho para o backbone de vídeo pré-treinado (padrão: `models/cnn3d/weights/rwf2000/best_model.pth` se `--video_backbone cnn3d`, `models/resnet_lstm/weights/best_model.pth` se `resnet_lstm`)
+- `--video_model_path`: Caminho para o backbone de vídeo pré-treinado (padrão: `models/cnn3d/weights/best_model.pth` se `--video_backbone cnn3d`, `models/resnet_lstm/weights/best_model.pth` se `resnet_lstm`)
 - `--window_size`: Tamanho da janela temporal (padrão: 16)
 
 A fusão é sempre **cross-attention** (sem flag `--fusion_method`). O checkpoint salva `fusion_method=cross_attention`, `emotion_feature_dim=128`, `video_backbone` e `video_feature_dim` (512 para CNN 3D, 256 para ResNet-LSTM), usados automaticamente na inferência e avaliação.
@@ -578,7 +528,7 @@ python run_evaluation.py \
 ```bash
 python run_evaluation.py \
     --model cnn3d \
-    --model_path models/cnn3d/weights/rwf2000/best_model.pth
+--model_path models/cnn3d/weights/best_model.pth
 ```
 
 Os resultados do CNN 3D são salvos em `results/cnn3d/`.
@@ -588,7 +538,7 @@ Os resultados do CNN 3D são salvos em `results/cnn3d/`.
 Avalia cada branch do modelo multimodal **independentemente** — `video` (CNN 3D por padrão; use `--video_backbone resnet_lstm` para ResNet-LSTM), `pose` (branch LSTM de pose do multimodal) e `emotion` (EmotionNet, métricas sobre as **8 classes**):
 
 ```bash
-python run_evaluation.py --model video   --model_path models/cnn3d/weights/rwf2000/best_model.pth
+python run_evaluation.py --model video   --model_path models/cnn3d/weights/best_model.pth
 python run_evaluation.py --model video   --video_backbone resnet_lstm --model_path models/resnet_lstm/weights/best_model.pth
 python run_evaluation.py --model pose    --model_path models/multimodal/weights/best_model.pth
 python run_evaluation.py --model emotion --model_path models/emotion_cnn/weights/best_model.pth
@@ -682,7 +632,7 @@ python run_realtime_risk_detection.py \
     --consecutive_windows 3
 ```
 
-O backbone de vídeo padrão é o **CNN 3D** (checkpoint em `models/cnn3d/weights/rwf2000/best_model.pth`). Para usar ResNet-LSTM, informe `--video_backbone resnet_lstm --video_model models/resnet_lstm/weights/best_model.pth`.
+O backbone de vídeo padrão é o **CNN 3D** (checkpoint em `models/cnn3d/weights/best_model.pth`). Para usar ResNet-LSTM, informe `--video_backbone resnet_lstm --video_model models/resnet_lstm/weights/best_model.pth`.
 
 **Parâmetros:**
 - `--source`: `0` para webcam ou URL RTSP (ex: `rtsp://...`)
@@ -693,7 +643,7 @@ O backbone de vídeo padrão é o **CNN 3D** (checkpoint em `models/cnn3d/weight
 - `--frame_size`: Tamanho dos frames para processamento H W (padrão: `224 224`)
 - `--face_aggregation`: `mean` (padrão) ou `max` — agregação de **todas** as faces de um frame em um único embedding de emoção
 - `--video_backbone`: `cnn3d` (padrão) ou `resnet_lstm` — backbone de vídeo do multimodal
-- `--cnn3d_model`: Caminho para modelo CNN 3D (padrão: `models/cnn3d/weights/rwf2000/best_model.pth`)
+- `--cnn3d_model`: Caminho para modelo CNN 3D (padrão: `models/cnn3d/weights/best_model.pth`)
 - `--video_model`: Caminho para modelo ResNet-LSTM (usado se `--video_backbone resnet_lstm`)
 - `--no_display`: Não exibir o vídeo (apenas processar)
 - `--device`: Device para inferência (`cuda`/`cpu`)
@@ -718,13 +668,6 @@ vc-seguranca/
 │   │   └── val/
 │   │       ├── Fight/                  # Vídeos violentos (validação)
 │   │       └── NonFight/               # Vídeos não violentos (validação)
-│   ├── UCF101/                        # Dataset de pré-treinamento (9 classes)
-│   │   ├── train/
-│   │   │   ├── BoxingPunchingBag/
-│   │   │   ├── BoxingSpeedBag/
-│   │   │   └── ... (9 classes)
-│   │   ├── test/
-│   │   └── val/
 │   └── balanced-affectnet/            # Dataset de emoções (8 classes)
 │       ├── train/
 │       │   ├── Anger/
@@ -760,10 +703,6 @@ vc-seguranca/
 │   │   │   └── val/                   # Pose de vídeos (validação)
 │   │   │       ├── violent/
 │   │   │       └── non_violent/
-│   │   └── ucf101/                    # Pose do UCF101 (opcional)
-│   │       ├── train/
-│   │       │   └── <class_name>/
-│   │       └── test/
 │   │
 │   └── emotion/                       # Vetores de emoção (após extract_emotion.py)
 │       └── rwf2000/                   # Emoções do RWF-2000
@@ -808,7 +747,6 @@ vc-seguranca/
 vc-seguranca/
 ├── dataset/                    # Datasets (não versionados)
 │   ├── RWF-2000/              # Dataset principal (violência CCTV)
-│   ├── UCF101/                # Dataset de pré-treinamento (9 classes)
 │   └── balanced-affectnet/    # Dataset de emoções (8 classes)
 ├── data/                      # Dados processados
 │   ├── raw/                   # Vídeos organizados
@@ -823,12 +761,8 @@ vc-seguranca/
 │   │   ├── weights/           # best_model.pth, confusion_matrix.npy
 │   │   └── experiments/       # training_history.json, confusion_matrix.png
 │   ├── cnn3d/                 # CNN 3D (R3D, R(2+1)D, MC3)
-│   │   ├── weights/
-│   │   │   ├── ucf101/        # Pesos do pré-treinamento
-│   │   │   └── rwf2000/       # Pesos do fine-tuning
+│   │   ├── weights/ # Pesos do finetuning
 │   │   └── experiments/
-│   │       ├── ucf101/
-│   │       └── rwf2000/
 │   └── multimodal/            # MultimodalRiskDetector
 │       ├── weights/
 │       └── experiments/
@@ -976,7 +910,7 @@ python train_pipeline.py --all --skip_emotion --skip_cnn3d --epochs 30 --batch_s
 python train_pipeline.py --all --force_retrain
 
 # Caminhos customizados de datasets
-python train_pipeline.py --all --affectnet_path /caminho/balanced-affectnet --ucf101_path /caminho/UCF101
+python train_pipeline.py --all --affectnet_path /caminho/balanced-affectnet
 ```
 
 **Vantagens do script master:**
@@ -997,7 +931,7 @@ Se preferir executar manualmente:
    python run_preprocessing.py frames --num_frames 16
    
    # 2. Extrair pose
-   python run_preprocessing.py pose --dataset rwf2000
+   python run_preprocessing.py pose --num_frames 16
    
    # 3. Treinar EmotionNet e extrair emoções
    python train_emotion_model.py
@@ -1009,9 +943,8 @@ Se preferir executar manualmente:
    # 1. Treinar ResNet-LSTM (usado como baseline)
    python -m src.training.train --epochs 50
    
-   # 2. Pré-treinar CNN 3D em UCF101 (backbone de vídeo padrão do multimodal)
-   python train_cnn3d.py --stage pretrain
-   python train_cnn3d.py --stage finetune --pretrained_path models/cnn3d/weights/ucf101/best_model.pth
+   # 2. Treinar CNN 3D (backbone de vídeo padrão do multimodal)
+   python train_cnn3d.py
    
    # 3. Treinar EmotionNet (se ainda não tiver)
    python train_emotion_model.py
@@ -1019,7 +952,7 @@ Se preferir executar manualmente:
 
 3. **Treinamento Multimodal**
    ```bash
-   # Backbone de vídeo padrão: CNN 3D (models/cnn3d/weights/rwf2000/best_model.pth)
+   # Backbone de vídeo padrão: CNN 3D (models/cnn3d/weights/best_model.pth)
    python train_multimodal.py \
        --epochs 50
    
@@ -1052,14 +985,12 @@ Se preferir executar manualmente:
 
 **Dependências:**
 - Multimodal requer: CNN 3D (obrigatório — backbone de vídeo padrão) ou ResNet-LSTM (alternativo via `--video_backbone resnet_lstm`), EmotionNet (opcional), Pose e Emotion extraídos
-- CNN 3D requer: UCF101 para pré-treinamento (opcional)
 - EmotionNet requer: Balanced-AffectNet para treinamento (opcional)
 
 ## Referências
 
 ### Datasets
 - **RWF-2000**: Real-World Fighting Dataset para detecção de violência
-- **UCF101**: Action Recognition Dataset (9 classes relevantes selecionadas)
 - **AffectNet (balanced)**: Facial Expression Dataset para reconhecimento de emoções
 
 ### Modelos e Arquiteturas

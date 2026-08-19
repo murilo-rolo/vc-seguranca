@@ -63,7 +63,7 @@ def main():
         "--cnn3d_model",
         type=str,
         default=None,
-        help="Caminho para modelo CNN 3D (padrão: models/cnn3d/weights/rwf2000/best_model.pth)"
+        help="Caminho para modelo CNN 3D (padrão: models/cnn3d/weights/best_model.pth)"
     )
     
     # Fonte de vídeo
@@ -135,7 +135,7 @@ def main():
     
     # Validações
     if args.video_backbone == "cnn3d" and not args.cnn3d_model:
-        args.cnn3d_model = str(p.CNN3D_RWF2000_WEIGHTS / "best_model.pth")
+        args.cnn3d_model = str(p.CNN3D_WEIGHTS / "best_model.pth")
     
     if args.video_backbone == "resnet_lstm" and not args.video_model:
         print("⚠ Aviso: --video_model não fornecido. Usando modelo ResNet-LSTM sem checkpoint.")

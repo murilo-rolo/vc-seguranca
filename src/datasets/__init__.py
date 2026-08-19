@@ -5,9 +5,7 @@ Módulo de datasets para o projeto de detecção de violência em vídeos.
 from .surveillance_dataset import SurveillanceRiskDataset, get_dataloaders
 from .multimodal_dataset import MultimodalSurveillanceDataset, get_multimodal_dataloaders
 from .video3d_dataset import (
-    UCF101Dataset,
     RWF2000Video3DDataset,
-    get_ucf101_dataloaders,
     get_rwf2000_3d_dataloaders
 )
 
@@ -16,9 +14,7 @@ __all__ = [
     "get_dataloaders",
     "MultimodalSurveillanceDataset",
     "get_multimodal_dataloaders",
-    "UCF101Dataset",
     "RWF2000Video3DDataset",
-    "get_ucf101_dataloaders",
     "get_rwf2000_3d_dataloaders"
 ]
 

@@ -41,7 +41,7 @@ class PoseSequenceDataset(Dataset):
         use_original_split: bool = True,
         val_test_split_ratio: float = 0.5,
         seed: int = 42,
-        dataset_name: str = "rwf2000"  # "rwf2000" ou "ucf101"
+        dataset_name: str = "rwf2000"  # "rwf2000"
     ):
         """
         Inicializa o dataset de pose.
@@ -62,7 +62,7 @@ class PoseSequenceDataset(Dataset):
             val_test_split_ratio: Se use_original_split=True, divide o val original em val e test
                                  usando esta proporção (padrão: 0.5 = 50/50)
             seed: Seed para reprodutibilidade
-            dataset_name: Nome do dataset ("rwf2000" ou "ucf101")
+dataset_name: Nome do dataset ("rwf2000")
         """
         self.pose_data_root = Path(pose_data_root)
         self.split = split
@@ -186,35 +186,8 @@ class PoseSequenceDataset(Dataset):
                 else:  # test
                     samples = samples[val_end:]
         
-        elif self.dataset_name == "ucf101":
-            # UCF101 tem sua própria divisão train/test
-            base_dir = self.pose_data_root / "ucf101"
-            
-            # Mapear split solicitado para split do UCF101
-            if self.split == "train":
-                ucf_split = "train"
-            else:  # val ou test -> usar test do UCF101
-                ucf_split = "test"
-            
-            split_dir = base_dir / ucf_split
-            if not split_dir.exists():
-                return []
-            
-            # Processar cada classe
-            for class_dir in split_dir.iterdir():
-                if not class_dir.is_dir():
-                    continue
-                
-                # Para UCF101, podemos usar o índice da classe como label
-                # ou criar um mapeamento. Por simplicidade, usaremos hash do nome
-                class_name = class_dir.name
-                class_label = hash(class_name) % 9  # UCF101 filtrado: 9 classes relevantes
-                
-                for npy_file in class_dir.glob("*.npy"):
-                    samples.append((npy_file, class_label))
-        
         else:
-            raise ValueError(f"Dataset não suportado: {self.dataset_name}")
+            raise ValueError(f"Dataset não suportado: {self.dataset_name}. Use 'rwf2000'")
         
         return samples
     
@@ -392,7 +365,7 @@ def get_pose_dataloaders(
         val_test_split_ratio: Se use_original_split=True, divide o val original em val e test
                              usando esta proporção (padrão: 0.5 = 50/50)
         seed: Seed para reprodutibilidade
-        dataset_name: Nome do dataset ("rwf2000" ou "ucf101")
+        dataset_name: Nome do dataset ("rwf2000")
     
     Returns:
         Tupla (train_loader, val_loader, test_loader)

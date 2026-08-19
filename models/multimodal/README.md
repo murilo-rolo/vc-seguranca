@@ -32,7 +32,7 @@ multimodal/
 ## Treinamento
 
 ```bash
-# Backbone de vídeo padrão: CNN 3D (models/cnn3d/weights/rwf2000/best_model.pth)
+# Backbone de vídeo padrão: CNN 3D (models/cnn3d/weights/best_model.pth)
 python train_multimodal.py --epochs 50 --batch_size 8
 
 # Alternativa: ResNet-LSTM como backbone de vídeo
@@ -47,5 +47,5 @@ O checkpoint salva `fusion_method`, `emotion_feature_dim` (128), `video_backbone
 
 ## Pré-requisitos
 
-1. Backbone de vídeo treinado — CNN 3D por padrão (`models/cnn3d/weights/rwf2000/best_model.pth`; use `--video_backbone resnet_lstm` para ResNet-LSTM, `models/resnet_lstm/weights/best_model.pth`)
+1. Backbone de vídeo treinado — CNN 3D por padrão (`models/cnn3d/weights/best_model.pth`; use `--video_backbone resnet_lstm` para ResNet-LSTM, `models/resnet_lstm/weights/best_model.pth`)
 2. Dados de pose e emoção processados (emoção em formato `T × 128`)

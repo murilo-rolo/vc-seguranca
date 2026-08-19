@@ -1,7 +1,6 @@
 """
-Script de treinamento para CNN 3D com duas etapas:
-1. Pré-treinamento em UCF101 (9 classes relevantes)
-2. Fine-tuning em RWF-2000 (2 classes: violent/non-violent)
+Script de fine-tuning de CNN 3D pré-treinada no Kinetics400 para
+RWF-2000 (2 classes: violent/non-violent).
 """
 
 import argparse
@@ -12,10 +11,7 @@ from pathlib import Path
 import json
 
 from src.models.cnn3d_risk import create_cnn3d_model
-from src.datasets.video3d_dataset import (
-    get_ucf101_dataloaders,
-    get_rwf2000_3d_dataloaders
-)
+from src.datasets.video3d_dataset import get_rwf2000_3d_dataloaders
 from src.training.utils import run_epoch
 from src import paths as p
 
@@ -27,126 +23,16 @@ def _permute_clips(batch):
         clips = clips.permute(0, 2, 1, 3, 4)
     return clips, labels
 
-
-def pretrain_ucf101(args):
-    """Etapa 1: Pré-treinamento em UCF101."""
+def finetune_rwf2000(args):
+    """Fine-tuning em RWF-2000."""
     print("=" * 60)
-    print("ETAPA 1: Pré-treinamento em UCF101")
-    print("=" * 60)
-    
-    # Criar diretórios de saída (nova estrutura)
-    output_dir = p.CNN3D_UCF101_WEIGHTS
-    output_dir.mkdir(parents=True, exist_ok=True)
-    experiments_dir = p.CNN3D_UCF101_EXPERIMENTS
-    experiments_dir.mkdir(parents=True, exist_ok=True)
-    
-    device = torch.device(args.device)
-    
-    # Criar modelo (9 classes relevantes para UCF101)
-    print("Criando modelo...")
-    model = create_cnn3d_model(
-        model_name=args.model_name,
-        num_classes=9,  # UCF101 filtrado: 9 classes relevantes
-        pretrained=args.pretrained,
-        pretrained_dataset="kinetics400",
-        dropout=args.dropout,
-        freeze_backbone=False,
-        device=args.device
-    )
-    print(f"✓ Modelo criado: {args.model_name}")
-    print(f"  Parâmetros: {sum(p.numel() for p in model.parameters()):,}")
-    
-    # Criar DataLoaders
-    print("Criando DataLoaders...")
-    train_loader, test_loader = get_ucf101_dataloaders(
-        dataset_root=args.dataset_root,
-        batch_size=args.batch_size,
-        num_frames=args.num_frames,
-        clip_size=args.clip_size,
-        num_workers=args.num_workers
-    )
-    print(f"✓ DataLoaders criados")
-    print(f"  Train batches: {len(train_loader)}")
-    print(f"  Test batches: {len(test_loader)}")
-    
-    # Loss e optimizer
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=15, gamma=0.1)
-    
-    # Treinamento
-    best_test_acc = 0.0
-    history = {
-        'train_loss': [],
-        'train_acc': [],
-        'test_loss': [],
-        'test_acc': []
-    }
-    
-    print("\nIniciando treinamento...")
-    for epoch in range(1, args.epochs + 1):
-        train_loss, train_acc = run_epoch(
-            model, train_loader, criterion, device,
-            is_train=True, optimizer=optimizer,
-            desc=f"Epoch {epoch} [Train]",
-            model_hook=_permute_clips
-        )
-
-        test_loss, test_acc = run_epoch(
-            model, test_loader, criterion, device,
-            is_train=False, desc=f"Epoch {epoch} [Val]",
-            model_hook=_permute_clips
-        )
-        
-        # Atualizar learning rate
-        scheduler.step()
-        
-        # Salvar histórico
-        history['train_loss'].append(train_loss)
-        history['train_acc'].append(train_acc)
-        history['test_loss'].append(test_loss)
-        history['test_acc'].append(test_acc)
-        
-        # Salvar melhor modelo
-        if test_acc > best_test_acc:
-            best_test_acc = test_acc
-            checkpoint = {
-                'epoch': epoch,
-                'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'test_acc': test_acc,
-                'test_loss': test_loss,
-                'model_name': args.model_name,
-                'num_classes': 9
-            }
-            torch.save(checkpoint, output_dir / 'best_model.pth')
-            print(f"\n✓ Melhor modelo salvo! Test Acc: {test_acc:.2f}%")
-        
-        print()
-    
-    # Salvar histórico
-    with open(experiments_dir / 'training_history.json', 'w') as f:
-        json.dump(history, f, indent=2)
-    
-    print("=" * 60)
-    print("Pré-treinamento concluído!")
-    print(f"Melhor Test Acc: {best_test_acc:.2f}%")
-    print(f"Modelo salvo em: {output_dir / 'best_model.pth'}")
-    print("=" * 60)
-    
-    return output_dir / 'best_model.pth'
-
-
-def finetune_rwf2000(args, pretrained_path: Path):
-    """Etapa 2: Fine-tuning em RWF-2000."""
-    print("=" * 60)
-    print("ETAPA 2: Fine-tuning em RWF-2000")
+    print("Fine-tuning em RWF-2000")
     print("=" * 60)
     
     # Criar diretórios de saída (nova estrutura)
-    output_dir = p.CNN3D_RWF2000_WEIGHTS
+    output_dir = p.CNN3D_WEIGHTS
     output_dir.mkdir(parents=True, exist_ok=True)
-    experiments_dir = p.CNN3D_RWF2000_EXPERIMENTS
+    experiments_dir = p.CNN3D_EXPERIMENTS
     experiments_dir.mkdir(parents=True, exist_ok=True)
     
     device = torch.device(args.device)
@@ -154,40 +40,19 @@ def finetune_rwf2000(args, pretrained_path: Path):
     # Criar modelo (2 classes para RWF-2000)
     print("Criando modelo para fine-tuning...")
     
-    # Carregar checkpoint do pré-treinamento (9 classes UCF101)
-    # Depois adaptar para 2 classes (RWF-2000)
-    checkpoint = torch.load(pretrained_path, map_location=device)
-    
-    # Criar modelo com 2 classes
+    # Criar modelo com 2 classes, backbone pré-treinado no Kinetics400
     model = create_cnn3d_model(
         model_name=args.model_name,
         num_classes=2,  # Binary classification
-        pretrained=False,
+        pretrained=True,
         pretrained_dataset="kinetics400",
         dropout=args.dropout,
-        freeze_backbone=False,  # Não congelar ainda
+        freeze_backbone=args.freeze_backbone,
         num_frames=args.num_frames,
         device=args.device
     )
-    
-    # Carregar pesos do backbone (ignorar classifier que tem 9 classes do UCF101)
-    if 'model_state_dict' in checkpoint:
-        state_dict = checkpoint['model_state_dict']
-    else:
-        state_dict = checkpoint
-    
-    # Carregar apenas pesos do backbone
-    backbone_state_dict = {}
-    for key, value in state_dict.items():
-        if 'classifier' not in key:
-            backbone_state_dict[key] = value
-    
-    try:
-        model.backbone.load_state_dict(backbone_state_dict, strict=False)
-        print("✓ Pesos do backbone carregados do checkpoint UCF101")
-    except Exception as e:
-        print(f"⚠ Aviso ao carregar pesos: {e}")
-        print("  Continuando com pesos aleatórios...")
+
+    print(f"✓ Backbone pré-treinado no Kinetics400 carregado")
     
     # Se freeze_backbone, só treinar classifier
     if args.freeze_backbone:
@@ -275,8 +140,7 @@ def finetune_rwf2000(args, pretrained_path: Path):
                 'val_acc': val_acc,
                 'val_loss': val_loss,
                 'model_name': args.model_name,
-                'num_classes': 2,
-                'pretrained_path': str(pretrained_path)
+                'num_classes': 2
             }
             torch.save(checkpoint, output_dir / 'best_model.pth')
             print(f"\n✓ Melhor modelo salvo! Val Acc: {val_acc:.2f}%")
@@ -297,15 +161,6 @@ def finetune_rwf2000(args, pretrained_path: Path):
 def main():
     parser = argparse.ArgumentParser(description="Treinar CNN 3D para detecção de violência")
     
-    # Etapa
-    parser.add_argument(
-        "--stage",
-        type=str,
-        choices=["pretrain", "finetune", "both"],
-        required=True,
-        help="Etapa de treinamento: 'pretrain' (UCF101), 'finetune' (RWF-2000), ou 'both'"
-    )
-    
     # Modelo
     parser.add_argument(
         "--model_name",
@@ -313,17 +168,6 @@ def main():
         choices=["r3d_18", "r2plus1d_18", "mc3_18"],
         default="r2plus1d_18",
         help="Nome do modelo 3D (padrão: 'r2plus1d_18')"
-    )
-    parser.add_argument(
-        "--pretrained",
-        action="store_true",
-        help="Usar pesos pré-treinados do Kinetics400 (apenas para pretrain)"
-    )
-    parser.add_argument(
-        "--pretrained_path",
-        type=str,
-        default=None,
-        help="Caminho para modelo pré-treinado em UCF101 (para finetune)"
     )
     parser.add_argument(
         "--freeze_backbone",
@@ -366,7 +210,7 @@ def main():
     parser.add_argument(
         "--dropout",
         type=float,
-        default=0.5,
+        default=0.3,
         help="Taxa de dropout"
     )
     
@@ -374,7 +218,7 @@ def main():
     parser.add_argument(
         "--num_workers",
         type=int,
-        default=4,
+        default=2,
         help="Número de workers para DataLoader"
     )
     parser.add_argument(
@@ -389,26 +233,9 @@ def main():
     # Converter clip_size para tupla
     args.clip_size = tuple(args.clip_size)
     
-    if args.stage == "pretrain" or args.stage == "both":
-        # Etapa 1: Pré-treinamento
-        args.dataset_root = str(p.UCF101_ROOT)
-        pretrained_path = pretrain_ucf101(args)
-        
-        if args.stage == "pretrain":
-            return
-    
-    if args.stage == "finetune" or args.stage == "both":
-        # Etapa 2: Fine-tuning
-        if args.pretrained_path:
-            pretrained_path = Path(args.pretrained_path)
-        elif args.stage == "both":
-            # Usar modelo recém-treinado
-            pass  # pretrained_path já definido acima
-        else:
-            raise ValueError("Para fine-tuning, forneça --pretrained_path ou use --stage both")
-        
-        args.dataset_root = str(p.RWF2000_ROOT)
-        finetune_rwf2000(args, pretrained_path)
+    # Fine-tuning com modelo pré-treinado no Kinetics400
+    args.dataset_root = str(p.RWF2000_ROOT)
+    finetune_rwf2000(args)
 
 
 if __name__ == "__main__":
