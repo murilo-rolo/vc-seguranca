@@ -14,6 +14,15 @@ from tqdm import tqdm
 from typing import Tuple, Optional, Callable
 
 
+def _to_device(x, device):
+    """Move recursivamente tensores (dentro de listas/tuplas) para o device."""
+    if isinstance(x, torch.Tensor):
+        return x.to(device)
+    if isinstance(x, (list, tuple)):
+        return type(x)(_to_device(item, device) for item in x)
+    return x
+
+
 def run_epoch(
     model: nn.Module,
     loader: DataLoader,
@@ -68,14 +77,17 @@ def run_epoch(
                     "Batch não reconhecido. Use model_hook para extrair inputs/labels."
                 )
 
-            inputs = inputs.to(device)
-            labels = labels.to(device)
+            inputs = _to_device(inputs, device)
+            labels = _to_device(labels, device)
 
             if is_train:
                 optimizer.zero_grad()
 
             with torch.amp.autocast('cuda', enabled=scaler is not None):
-                outputs = model(inputs)
+                if isinstance(inputs, (list, tuple)):
+                    outputs = model(*inputs)
+                else:
+                    outputs = model(inputs)
                 loss = criterion(outputs, labels)
 
             if is_train:
