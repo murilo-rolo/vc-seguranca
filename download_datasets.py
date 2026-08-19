@@ -13,20 +13,34 @@ Uso:
 """
 
 import argparse
+import concurrent.futures
+import math
 import os
 import shutil
-import sys
 import subprocess
+import sys
+import threading
+import time
+import urllib.error
+import urllib.request
 import zipfile
 from pathlib import Path, PurePath
 from typing import List, Optional
+
+_USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
+_CHUNK = 1024 * 1024  # 1 MB por leitura
+_MIN_SPLIT = 16 * _CHUNK  # abaixo disso, não vale segmentar (aria2c usa --min-split-size=1M x16)
 
 from src import paths as p
 
 
 def download_file(url: str, dest: Path, description: str = "") -> bool:
     """
-    Faz download de um arquivo usando aria2c (16 conexões paralelas).
+    Faz download de um arquivo, preferindo aria2c (16 conexões paralelas).
+
+    Se o aria2c não estiver instalado — ou falhar na execução — cai num
+    fallback em Python puro que espelha o mesmo comportamento: downloads
+    segmentados via Range requests em 16 conexões (ThreadPoolExecutor).
 
     Args:
         url: URL do arquivo
@@ -40,14 +54,19 @@ def download_file(url: str, dest: Path, description: str = "") -> bool:
         print(f"[SKIP] Arquivo já existe: {dest}")
         return True
 
-    if not shutil.which("aria2c"):
-        print("[ERRO] aria2c não encontrado. Instale com:")
-        print("  sudo apt install aria2          # Debian/Ubuntu")
-        print("  sudo pacman -S aria2            # Arch")
-        print("  brew install aria2              # macOS")
-        print("  choco install aria2             # Windows (Chocolatey)")
-        return False
+    if shutil.which("aria2c"):
+        if _download_aria2c(url, dest, description):
+            return True
+        print("[AVISO] aria2c falhou; tentando fallback paralelo...")
+    else:
+        print("[AVISO] aria2c não encontrado; usando fallback paralelo (16 conexões).")
+        print("  Dica: sudo apt install aria2 | brew install aria2 | choco install aria2")
 
+    return _download_fallback(url, dest, description)
+
+
+def _download_aria2c(url: str, dest: Path, description: str = "") -> bool:
+    """Baixa via aria2c com 16 conexões paralelas. Retorna True se sucesso."""
     print(f"[DOWNLOAD] {description or dest.name}")
     print(f"  URL: {url}")
     print(f"  Destino: {dest}")
@@ -82,6 +101,189 @@ def download_file(url: str, dest: Path, description: str = "") -> bool:
     if dest.exists():
         dest.unlink()
     return False
+
+
+def _download_fallback(url: str, dest: Path, description: str = "", connections: int = 16) -> bool:
+    """
+    Fallback em Python puro (stdlib) quando o aria2c não está disponível/falhou.
+
+    Estratégia (mesmo princípio do aria2c -x16 -s16):
+      1. Probe: GET com 'Range: bytes=0-0' — segue redirecionamentos e descobre a
+         URL final, o tamanho total (via Content-Range) e se o servidor suporta Range.
+      2. Se suporta (206): baixa em 'connections' segmentos paralelos, gravando cada
+         um no offset exato de um arquivo pré-alocado (os.pwrite). Retoma por
+         segmento em caso de falha.
+      3. Se não suporta (200): stream único de 1MB com retries.
+    """
+    part = dest.with_name(dest.name + ".part")
+    if part.exists():
+        part.unlink()
+
+    print(f"[DOWNLOAD] {description or dest.name}")
+    print(f"  URL: {url}")
+    print(f"  Destino: {dest}")
+    print("  Motor: fallback paralelo (Range requests, stdlib)")
+
+    try:
+        req = urllib.request.Request(
+            url, method="GET",
+            headers={"Range": "bytes=0-0", "User-Agent": _USER_AGENT},
+        )
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            status = resp.status
+            final_url = resp.geturl()
+            total = 0
+            content_range = resp.headers.get("Content-Range")
+            if status == 206 and content_range:
+                try:
+                    total = int(content_range.rsplit("/", 1)[1])
+                except ValueError:
+                    total = 0
+    except Exception as e:
+        print(f"[ERRO] Falha ao conectar: {e}")
+        return False
+
+    if status == 206 and total > 0:
+        return _download_parallel(final_url, part, dest, total, description, connections)
+
+    return _download_single(final_url, part, dest, 0, description)
+
+
+def _download_single(url: str, part: Path, dest: Path, total: int, description: str) -> bool:
+    """Stream único (sem Range) com retries e verificação de tamanho."""
+    for attempt in range(5):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                if total == 0:
+                    try:
+                        total = int(resp.headers.get("Content-Length") or 0)
+                    except ValueError:
+                        total = 0
+                with open(part, "wb") as f:
+                    while True:
+                        data = resp.read(_CHUNK)
+                        if not data:
+                            break
+                        f.write(data)
+                break
+        except Exception as e:
+            if attempt < 4:
+                print(f"  [RETRY] {e}; tentativa {attempt + 2}/5", flush=True)
+                time.sleep(3)
+                continue
+            if part.exists():
+                part.unlink()
+            print(f"[ERRO] Download falhou após 5 tentativas: {dest.name}")
+            return False
+
+    size = part.stat().st_size
+    if total and size != total:
+        print(f"[ERRO] Tamanho incorreto: esperado {total}, obtido {size}")
+        part.unlink()
+        return False
+    os.replace(part, dest)
+    print(f"[OK] Download concluído: {dest} ({size / (1024 * 1024):.1f} MB)")
+    return True
+
+
+def _download_parallel(url: str, part: Path, dest: Path, total: int, description: str, connections: int = 16) -> bool:
+    """
+    Download segmentado em paralelo via Range requests.
+
+    Cada worker abre sua própria conexão para 'url' (já resolvida pelo probe),
+    baixa 'Range: bytes=inicio-fim' e grava no offset exato de um arquivo
+    pré-alocado via os.pwrite (seguro entre threads). Em falha, o segmento
+    retoma de onde parou ('start+written').
+    """
+    if total < _MIN_SPLIT:
+        print(f"  Arquivo pequeno ({total / 1024 / 1024:.1f} MB): usando stream único")
+        return _download_single(url, part, dest, total, description)
+
+    connections = max(1, min(connections, total // _CHUNK))
+    seg_size = math.ceil(total / connections)
+    actual_conn = (total + seg_size - 1) // seg_size
+
+    print(f"  Segmentos: {actual_conn} ({connections} conexões), ~{seg_size / 1024 / 1024:.0f} MB cada")
+
+    fd = None
+    try:
+        fd = os.open(part, os.O_RDWR | os.O_CREAT | os.O_TRUNC)
+        os.ftruncate(fd, total)
+    except OSError as e:
+        if fd is not None:
+            os.close(fd)
+        if part.exists():
+            part.unlink()
+        print(f"[ERRO] Falha ao pré-alocar {part}: {e}")
+        return False
+
+    progress = {"done": 0}
+    progress_lock = threading.Lock()
+    last_mark = {"mb": 0}
+
+    def report(amount: int) -> None:
+        with progress_lock:
+            progress["done"] += amount
+            mark = progress["done"] // (512 * 1024 * 1024)
+            if mark > last_mark["mb"]:
+                last_mark["mb"] = mark
+                pct = progress["done"] * 100.0 / total
+                print(f"  {progress['done'] / 1024**3:.2f} GB / {total / 1024**3:.2f} GB ({pct:.1f}%)", flush=True)
+
+    def worker(index: int) -> int:
+        start = index * seg_size
+        end = min(total, start + seg_size) - 1
+        expected = end - start + 1
+        written = 0
+        for attempt in range(5):
+            try:
+                if written >= expected:
+                    return written
+                headers = {"User-Agent": _USER_AGENT, "Range": f"bytes={start + written}-{end}"}
+                req = urllib.request.Request(url, method="GET", headers=headers)
+                with urllib.request.urlopen(req, timeout=120) as resp:
+                    if resp.status != 206:
+                        raise urllib.error.HTTPError(url, resp.status, "servidor não respondeu 206", resp.headers, None)
+                    while written < expected:
+                        data = resp.read(_CHUNK)
+                        if not data:
+                            break
+                        os.pwrite(fd, data, start + written)
+                        written += len(data)
+                        report(len(data))
+                if written < expected:
+                    raise OSError(f"conexão encerrada cedo ({written}/{expected})")
+                return written
+            except Exception as e:
+                if attempt < 4:
+                    print(f"  [RETRY] segmento {index + 1}/{actual_conn}: {e} (tentativa {attempt + 2}/5)", flush=True)
+                    time.sleep(3)
+                    continue
+                raise
+        return written
+
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=connections) as ex:
+            futures = [ex.submit(worker, i) for i in range(actual_conn)]
+            for fut in concurrent.futures.as_completed(futures):
+                fut.result()
+        os.fsync(fd)
+        os.close(fd)
+        fd = None
+        if part.stat().st_size != total:
+            raise OSError(f"tamanho final incorreto: {part.stat().st_size} != {total}")
+        os.replace(part, dest)
+    except Exception as e:
+        if fd is not None:
+            os.close(fd)
+        if part.exists():
+            part.unlink()
+        print(f"[ERRO] Download paralelo falhou: {e}")
+        return False
+
+    print(f"[OK] Download concluído: {dest} ({total / (1024 * 1024):.1f} MB)")
+    return True
 
 
 def _decode_zip_name(info: zipfile.ZipInfo) -> str:
@@ -291,46 +493,6 @@ def download_affectnet() -> bool:
         print(f"  {split}: {len(classes)} classes -> {', '.join(classes)}")
     
     return True
-
-
-def _filter_csv_file(csv_path: Path, classes_to_keep: List[str]):
-    """
-    Filtra arquivo CSV mantendo apenas as classes desejadas.
-    """
-    try:
-        with open(csv_path, 'r', encoding='utf-8') as f:
-            lines = f.readlines()
-        
-        if not lines:
-            print(f"[AVISO] Arquivo vazio: {csv_path}")
-            return
-        
-        header = lines[0]
-        initial_count = len(lines) - 1
-        filtered_lines = [header]
-        
-        for line in lines[1:]:
-            parts = line.strip().split(',')
-            if len(parts) >= 3:
-                label = parts[-1].strip()
-                if label in classes_to_keep:
-                    filtered_lines.append(line)
-        
-        final_count = len(filtered_lines) - 1
-        
-        with open(csv_path, 'w', encoding='utf-8') as f:
-            f.writelines(filtered_lines)
-        
-        unique_classes = set()
-        for line in filtered_lines[1:]:
-            parts = line.strip().split(',')
-            if len(parts) >= 3:
-                unique_classes.add(parts[-1].strip())
-        
-        print(f"[OK] {csv_path.name}: {initial_count} -> {final_count} linhas ({len(unique_classes)} classes)")
-        
-    except Exception as e:
-        print(f"[ERRO] Erro ao filtrar {csv_path}: {e}")
 
 
 def main():
