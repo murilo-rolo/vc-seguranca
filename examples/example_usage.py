@@ -82,7 +82,7 @@ def example_model():
         num_frames=16,
         hidden_size=256,
         num_layers=2,
-        dropout=0.5,
+        dropout=0.3,
         num_classes=2,
         pretrained=True,
         device=device

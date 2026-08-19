@@ -25,7 +25,7 @@ def train(
     learning_rate: float = 1e-4,
     hidden_size: int = 256,
     num_layers: int = 2,
-    dropout: float = 0.5,
+    dropout: float = 0.3,
     num_workers: int = 4,
     device: str = None,
     save_dir: str = str(p.RESNET_LSTM_WEIGHTS),
@@ -180,7 +180,7 @@ def main():
     parser.add_argument(
         "--dropout",
         type=float,
-        default=0.5,
+        default=0.3,
         help="Taxa de dropout"
     )
     parser.add_argument(

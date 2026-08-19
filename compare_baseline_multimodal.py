@@ -131,7 +131,7 @@ def main():
     parser.add_argument(
         "--baseline_model_path",
         type=str,
-        default="models/resnet_lstm/weights/best_model.pth",
+        default="models/cnn3d/weights/best_model.pth",
         help="Caminho para modelo baseline (ResNet-LSTM)"
     )
     parser.add_argument(
@@ -170,7 +170,7 @@ def main():
         num_frames=16,
         hidden_size=256,
         num_layers=2,
-        dropout=0.5,
+        dropout=0.3,
         num_classes=2,
         pretrained=True,
         device=args.device
@@ -222,7 +222,7 @@ def main():
             num_frames=16,
             hidden_size=256,
             num_layers=2,
-            dropout=0.5,
+            dropout=0.3,
             num_classes=2,
             pretrained=True,
             device=args.device

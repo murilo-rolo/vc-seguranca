@@ -36,7 +36,7 @@ class ResNetLSTM(nn.Module):
         num_frames: int = 16,
         hidden_size: int = 256,
         num_layers: int = 2,
-        dropout: float = 0.5,
+        dropout: float = 0.3,
         num_classes: int = 2,
         pretrained: bool = True
     ):
@@ -173,7 +173,7 @@ def create_model(
     num_frames: int = 16,
     hidden_size: int = 256,
     num_layers: int = 2,
-    dropout: float = 0.5,
+    dropout: float = 0.3,
     num_classes: int = 2,
     pretrained: bool = True,
     device: str = "cuda" if torch.cuda.is_available() else "cpu"

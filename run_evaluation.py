@@ -82,17 +82,17 @@ class PoseSubModel(nn.Module):
             self.pose_processor = nn.Sequential(
                 nn.Linear(pose_feature_dim, pose_hidden_dim),
                 nn.ReLU(),
-                nn.Dropout(0.5),
+                nn.Dropout(0.3),
             )
             pose_output_dim = pose_hidden_dim
         self.pose_proj = nn.Linear(pose_output_dim, fusion_dim)
         self.fusion_layers = nn.Sequential(
             nn.Linear(fusion_dim, fusion_dim),
             nn.ReLU(),
-            nn.Dropout(0.5),
+            nn.Dropout(0.3),
             nn.Linear(fusion_dim, fusion_dim // 2),
             nn.ReLU(),
-            nn.Dropout(0.5),
+            nn.Dropout(0.3),
         )
         self.classifier = nn.Linear(fusion_dim // 2, num_classes)
 
@@ -181,7 +181,7 @@ def load_model(
             num_frames=16,
             hidden_size=256,
             num_layers=2,
-            dropout=0.5,
+            dropout=0.3,
             num_classes=2,
             pretrained=True,
             device=device
@@ -231,7 +231,7 @@ def load_model(
                 num_frames=16,
                 hidden_size=256,
                 num_layers=2,
-                dropout=0.5,
+                dropout=0.3,
                 num_classes=2,
                 pretrained=True,
                 device=device
@@ -268,7 +268,7 @@ def load_model(
                 num_frames=16,
                 hidden_size=256,
                 num_layers=2,
-                dropout=0.5,
+                dropout=0.3,
                 num_classes=2,
                 pretrained=True,
                 device=device

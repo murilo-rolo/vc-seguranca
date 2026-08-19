@@ -55,7 +55,7 @@ class MultimodalRiskDetector(nn.Module):
 
         # Classificação
         num_classes: int = 2,              # 2: violent/non-violent
-        dropout: float = 0.5,
+        dropout: float = 0.3,
 
         # Processamento temporal
         use_temporal_modeling: bool = True,  # LSTM apenas para pose/emotion

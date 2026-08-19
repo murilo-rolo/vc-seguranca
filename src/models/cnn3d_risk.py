@@ -79,7 +79,7 @@ class CNN3DRiskDetector(nn.Module):
         num_classes: int = 2,
         pretrained: bool = True,
         pretrained_dataset: str = "kinetics400",
-        dropout: float = 0.5,
+        dropout: float = 0.3,
         freeze_backbone: bool = False
     ):
         super(CNN3DRiskDetector, self).__init__()
@@ -188,7 +188,7 @@ def create_cnn3d_model(
     num_classes: int = 2,
     pretrained: bool = True,
     pretrained_dataset: str = "kinetics400",
-    dropout: float = 0.5,
+    dropout: float = 0.3,
     freeze_backbone: bool = False,
     checkpoint_path: Optional[str] = None,
     num_frames: int = 16,

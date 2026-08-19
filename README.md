@@ -413,7 +413,7 @@ python -m src.training.train \
     --learning_rate 1e-4 \
     --hidden_size 256 \
     --num_layers 2 \
-    --dropout 0.5
+    --dropout 0.3
 ```
 
 #### 2.2. Treinamento EmotionNet
@@ -491,7 +491,7 @@ O modelo é salvo em `models/multimodal/weights/best_model.pth`.
 | `--learning_rate` | Taxa de aprendizado | 1e-4 | 1e-4 a 1e-3 |
 | `--hidden_size` | Tamanho do hidden state LSTM | 256 | 128-512 |
 | `--num_layers` | Camadas LSTM | 2 | 1-3 |
-| `--dropout` | Taxa de dropout | 0.5 | 0.3-0.7 |
+| `--dropout` | Taxa de dropout | 0.3 | 0.3-0.5 |
 | `--num_workers` | Workers do DataLoader | 4 | 0-4 dependendo da CPU |
 | `--early_stopping_patience` | Paciência do early stopping | 10 | 5-15 |
 

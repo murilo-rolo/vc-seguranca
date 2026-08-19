@@ -141,7 +141,7 @@ def main():
             num_frames=args.num_frames,
             hidden_size=256,
             num_layers=2,
-            dropout=0.5,
+            dropout=0.3,
             num_classes=2,
             pretrained=True,
             device=args.device
