@@ -585,19 +585,19 @@ def main():
     parser.add_argument(
         "--video_model_path",
         type=str,
-        default=None,
+        default="models/cnn3d/weights/best_model.pth",
         help="Checkpoint do sub-modelo de vídeo (padrão: models/cnn3d/weights/best_model.pth se --video_backbone cnn3d)"
     )
     parser.add_argument(
         "--pose_model_path",
         type=str,
-        default=None,
+        default="models/multimodal/weights/best_model.pth",
         help="Checkpoint do sub-modelo de pose (padrão: o checkpoint multimodal de --model_path)"
     )
     parser.add_argument(
         "--emotion_model_path",
         type=str,
-        default=None,
+        default="models/emotion_cnn/weights/best_model.pth",
         help="Checkpoint do sub-modelo de emoção (padrão: models/emotion_cnn/weights/best_model.pth)"
     )
     
