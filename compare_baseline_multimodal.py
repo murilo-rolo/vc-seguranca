@@ -149,7 +149,7 @@ def main():
     parser.add_argument(
         "--video_model_path",
         type=str,
-        default=None,
+        default="cnn3d",
         help="Checkpoint do backbone de vídeo do multimodal (padrão: conforme o video_backbone gravado no checkpoint multimodal)"
     )
     

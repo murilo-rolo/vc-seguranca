@@ -74,7 +74,7 @@ def main():
     parser.add_argument(
         "--batch_size",
         type=int,
-        default=8,
+        default=16,
         help="Tamanho do batch"
     )
     parser.add_argument(

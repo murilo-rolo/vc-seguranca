@@ -185,7 +185,7 @@ def main():
     parser.add_argument(
         "--batch_size",
         type=int,
-        default=8,
+        default=16,
         help="Tamanho do batch"
     )
     parser.add_argument(
@@ -210,7 +210,7 @@ def main():
     parser.add_argument(
         "--dropout",
         type=float,
-        default=0.3,
+        default=0.4,
         help="Taxa de dropout"
     )
     
