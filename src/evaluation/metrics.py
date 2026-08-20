@@ -259,12 +259,8 @@ class MetricsCalculator:
             for batch in self.dataloader:
                 # Assumir que batch é (inputs, labels) ou similar
                 # Adaptar conforme estrutura do dataloader
-                if len(batch) == 2:
-                    inputs = batch[0]
-                    labels = batch[1]
-                else:
-                    # Tentar inferir estrutura
-                    inputs = batch[:-1]
+                if len(batch) >= 2:
+                    inputs = batch[0:-1]
                     labels = batch[-1]
                 
                 # Mover para device

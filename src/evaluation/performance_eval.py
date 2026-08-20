@@ -175,7 +175,7 @@ class PerformanceEvaluator:
             # Preprocessing
             prep_start = time.time()
             if isinstance(batch, (list, tuple)) and len(batch) >= 2:
-                inputs = batch[0]
+                inputs = batch[0:-1]
             else:
                 inputs = batch
             
