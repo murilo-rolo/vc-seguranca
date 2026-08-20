@@ -94,7 +94,7 @@ class RobustnessEvaluator:
             for batch in self.dataloader:
                 # Obter inputs e labels
                 if isinstance(batch, (list, tuple)) and len(batch) >= 2:
-                    inputs = batch[0]
+                    inputs = batch[0:-1]
                     labels = batch[-1]
                 else:
                     inputs = batch

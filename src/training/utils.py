@@ -71,7 +71,7 @@ def run_epoch(
             if model_hook:
                 inputs, labels = model_hook(batch)
             elif isinstance(batch, (list, tuple)) and len(batch) >= 2:
-                inputs, labels = batch[0], batch[1]
+                inputs, labels = batch[0:-1], batch[-1]
             else:
                 raise ValueError(
                     "Batch não reconhecido. Use model_hook para extrair inputs/labels."
