@@ -338,7 +338,7 @@ def _get_per_model_test_loader(model_type: str, batch_size: int, video_backbone:
     if model_type == "video":
         if video_backbone == "cnn3d":
             # Clipes 3D do RWF-2000 (permutação (B,T,C,H,W)->(B,C,T,H,W) no MetricsCalculator)
-            _, test_loader = get_rwf2000_3d_dataloaders(
+            _, _, test_loader = get_rwf2000_3d_dataloaders(
                 dataset_root=str(p.RWF2000_ROOT),
                 batch_size=batch_size,
                 num_frames=16,
@@ -747,7 +747,7 @@ def main():
             # Clipes 3D do RWF-2000 em formato frame-last (B, T, C, H, W);
             # a permutação (B, T, C, H, W) -> (B, C, T, H, W) é feita no
             # MetricsCalculator (mesma semântica de train_cnn3d._permute_clips).
-            _, test_loader = get_rwf2000_3d_dataloaders(
+            _, _, test_loader = get_rwf2000_3d_dataloaders(
                 dataset_root=str(p.RWF2000_ROOT),
                 batch_size=args.batch_size,
                 num_frames=16,

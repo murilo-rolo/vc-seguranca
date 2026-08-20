@@ -40,18 +40,23 @@ class RWF2000Video3DDataset(Dataset):
         num_frames: int = 16,
         clip_size: Tuple[int, int] = (112, 112),
         transform: Optional[Callable] = None,
-        sample_stride: int = 1
+        sample_stride: int = 1,
+        val_test_split_ratio: float = 0.5,
+        seed: int = 42
     ):
         """
         Inicializa o dataset RWF-2000.
         
         Args:
             dataset_root: Raiz do dataset RWF-2000
-            split: "train" ou "val"
+            split: "train", "val" ou "test"
             num_frames: Número de frames por clipe
             clip_size: Tamanho do clipe (H, W)
             transform: Transformações a aplicar
             sample_stride: Stride para amostragem de frames
+            val_test_split_ratio: Se split for "val" ou "test", divide o split
+                                  original "val" usando esta proporção (padrão: 0.5)
+            seed: Seed para reprodutibilidade do split val/test
         """
         if dataset_root is None:
             dataset_root = str(p.RWF2000_ROOT)
@@ -61,6 +66,8 @@ class RWF2000Video3DDataset(Dataset):
         self.clip_size = clip_size
         self.transform = transform
         self.sample_stride = sample_stride
+        self.val_test_split_ratio = val_test_split_ratio
+        self.seed = seed
         
         # Carregar amostras
         self.samples = self._load_samples()
@@ -73,7 +80,16 @@ class RWF2000Video3DDataset(Dataset):
     def _load_samples(self) -> List[Tuple[Path, int]]:
         """Carrega lista de amostras (video_path, label)."""
         samples = []
-        split_dir = self.dataset_root / self.split
+        
+        # Preservar divisão original: "val" e "test" vêm do split val original
+        if self.split == "train":
+            split_name = "train"
+        elif self.split in ["val", "test"]:
+            split_name = "val"
+        else:
+            raise ValueError(f"Split inválido: {self.split}")
+        
+        split_dir = self.dataset_root / split_name
         
         if not split_dir.exists():
             return samples
@@ -89,6 +105,19 @@ class RWF2000Video3DDataset(Dataset):
         if nonfight_dir.exists():
             for video_file in nonfight_dir.glob("*.avi"):
                 samples.append((video_file, 0))
+        
+        # Se solicitamos val ou test, dividir o val original
+        if split_name == "val" and len(samples) > 0:
+            random.seed(self.seed)
+            random.shuffle(samples)
+            
+            total_val = len(samples)
+            val_end = int(total_val * self.val_test_split_ratio)
+            
+            if self.split == "val":
+                samples = samples[:val_end]
+            else:  # test
+                samples = samples[val_end:]
         
         return samples
     
@@ -186,13 +215,19 @@ def get_rwf2000_3d_dataloaders(
     clip_size: Tuple[int, int] = (112, 112),
     num_workers: int = 4,
     train_transform: Optional[Callable] = None,
-    val_transform: Optional[Callable] = None
+    val_transform: Optional[Callable] = None,
+    val_test_split_ratio: float = 0.5,
+    seed: int = 42
 ):
     """
     Cria DataLoaders para RWF-2000 (fine-tuning).
     
+    IMPORTANTE: Usa a divisão original do RWF-2000 (train/val). O split 'test'
+    é criado dividindo o split 'val' original em val/test usando
+    val_test_split_ratio (padrão: 0.5 = 50/50) com seed fixa (42).
+    
     Returns:
-        Tupla (train_loader, val_loader)
+        Tupla (train_loader, val_loader, test_loader)
     """
     if dataset_root is None:
         dataset_root = str(p.RWF2000_ROOT)
@@ -203,7 +238,9 @@ def get_rwf2000_3d_dataloaders(
         split="train",
         num_frames=num_frames,
         clip_size=clip_size,
-        transform=train_transform
+        transform=train_transform,
+        val_test_split_ratio=val_test_split_ratio,
+        seed=seed
     )
     
     val_dataset = RWF2000Video3DDataset(
@@ -211,7 +248,19 @@ def get_rwf2000_3d_dataloaders(
         split="val",
         num_frames=num_frames,
         clip_size=clip_size,
-        transform=val_transform
+        transform=val_transform,
+        val_test_split_ratio=val_test_split_ratio,
+        seed=seed
+    )
+    
+    test_dataset = RWF2000Video3DDataset(
+        dataset_root=dataset_root,
+        split="test",
+        num_frames=num_frames,
+        clip_size=clip_size,
+        transform=val_transform,
+        val_test_split_ratio=val_test_split_ratio,
+        seed=seed
     )
     
     train_loader = DataLoader(
@@ -230,5 +279,13 @@ def get_rwf2000_3d_dataloaders(
         pin_memory=True if torch.cuda.is_available() else False
     )
     
-    return train_loader, val_loader
+    test_loader = DataLoader(
+        test_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=True if torch.cuda.is_available() else False
+    )
+    
+    return train_loader, val_loader, test_loader
 

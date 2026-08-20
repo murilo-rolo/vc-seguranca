@@ -105,7 +105,7 @@ def example_dataloader():
     
     try:
         # RWF-2000
-        train_loader, val_loader = get_rwf2000_3d_dataloaders(
+        train_loader, val_loader, test_loader = get_rwf2000_3d_dataloaders(
             dataset_root=str(p.RWF2000_ROOT),
             batch_size=2,
             num_frames=16,
@@ -116,6 +116,7 @@ def example_dataloader():
         print(f"\nRWF-2000 DataLoaders:")
         print(f"  Train batches: {len(train_loader)}")
         print(f"  Val batches: {len(val_loader)}")
+        print(f"  Test batches: {len(test_loader)}")
         
         # Obter um batch
         clip, label = next(iter(train_loader))

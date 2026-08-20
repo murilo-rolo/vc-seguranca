@@ -66,7 +66,7 @@ def finetune_rwf2000(args):
     
     # Criar DataLoaders
     print("Criando DataLoaders...")
-    train_loader, val_loader = get_rwf2000_3d_dataloaders(
+    train_loader, val_loader, _ = get_rwf2000_3d_dataloaders(
         dataset_root=args.dataset_root,
         batch_size=args.batch_size,
         num_frames=args.num_frames,
