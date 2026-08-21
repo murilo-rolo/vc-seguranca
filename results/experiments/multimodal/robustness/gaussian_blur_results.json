@@ -1,0 +1,259 @@
+{
+  "distortion_type": "gaussian_blur",
+  "intensities": [
+    0.0,
+    0.2,
+    0.4,
+    0.6,
+    0.8,
+    1.0
+  ],
+  "metrics": [
+    {
+      "intensity": 0.0,
+      "accuracy": 0.77,
+      "precision": {
+        "Non-Violent": 0.9322033898305084,
+        "Violent": 0.7021276595744681,
+        "macro": 0.8171655247024883,
+        "weighted": 0.8137143887486477
+      },
+      "recall": {
+        "Non-Violent": 0.5670103092783505,
+        "Violent": 0.9611650485436893,
+        "macro": 0.7640876789110199,
+        "weighted": 0.77
+      },
+      "f1_score": {
+        "Non-Violent": 0.7051282051282052,
+        "Violent": 0.8114754098360656,
+        "macro": 0.7583018074821354,
+        "weighted": 0.7598970155527534
+      },
+      "specificity": 0.5670103092783505,
+      "confusion_matrix": {
+        "true_negative": 55,
+        "false_positive": 42,
+        "false_negative": 4,
+        "true_positive": 99
+      },
+      "confusion_matrix_array": [
+        [
+          55,
+          42
+        ],
+        [
+          4,
+          99
+        ]
+      ],
+      "auc_roc": 0.8587728956060454,
+      "auc_pr": 0.8389617503112912
+    },
+    {
+      "intensity": 0.2,
+      "accuracy": 0.76,
+      "precision": {
+        "Non-Violent": 0.9298245614035088,
+        "Violent": 0.6923076923076923,
+        "macro": 0.8110661268556005,
+        "weighted": 0.8075033738191633
+      },
+      "recall": {
+        "Non-Violent": 0.5463917525773195,
+        "Violent": 0.9611650485436893,
+        "macro": 0.7537784005605044,
+        "weighted": 0.76
+      },
+      "f1_score": {
+        "Non-Violent": 0.6883116883116883,
+        "Violent": 0.8048780487804879,
+        "macro": 0.7465948685460881,
+        "weighted": 0.7483433639531201
+      },
+      "specificity": 0.5463917525773195,
+      "confusion_matrix": {
+        "true_negative": 53,
+        "false_positive": 44,
+        "false_negative": 4,
+        "true_positive": 99
+      },
+      "confusion_matrix_array": [
+        [
+          53,
+          44
+        ],
+        [
+          4,
+          99
+        ]
+      ],
+      "auc_roc": 0.8544690221199078,
+      "auc_pr": 0.836294025174814
+    },
+    {
+      "intensity": 0.4,
+      "accuracy": 0.755,
+      "precision": {
+        "Non-Violent": 0.9285714285714286,
+        "Violent": 0.6875,
+        "macro": 0.8080357142857143,
+        "weighted": 0.8044196428571427
+      },
+      "recall": {
+        "Non-Violent": 0.5360824742268041,
+        "Violent": 0.9611650485436893,
+        "macro": 0.7486237613852467,
+        "weighted": 0.755
+      },
+      "f1_score": {
+        "Non-Violent": 0.6797385620915033,
+        "Violent": 0.8016194331983806,
+        "macro": 0.7406789976449419,
+        "weighted": 0.7425072107115451
+      },
+      "specificity": 0.5360824742268041,
+      "confusion_matrix": {
+        "true_negative": 52,
+        "false_positive": 45,
+        "false_negative": 4,
+        "true_positive": 99
+      },
+      "confusion_matrix_array": [
+        [
+          52,
+          45
+        ],
+        [
+          4,
+          99
+        ]
+      ],
+      "auc_roc": 0.8468621759583626,
+      "auc_pr": 0.82973271231201
+    },
+    {
+      "intensity": 0.6,
+      "accuracy": 0.725,
+      "precision": {
+        "Non-Violent": 0.9038461538461539,
+        "Violent": 0.6621621621621622,
+        "macro": 0.783004158004158,
+        "weighted": 0.779378898128898
+      },
+      "recall": {
+        "Non-Violent": 0.4845360824742268,
+        "Violent": 0.9514563106796117,
+        "macro": 0.7179961965769193,
+        "weighted": 0.725
+      },
+      "f1_score": {
+        "Non-Violent": 0.6308724832214765,
+        "Violent": 0.7808764940239044,
+        "macro": 0.7058744886226904,
+        "weighted": 0.708124548784727
+      },
+      "specificity": 0.4845360824742268,
+      "confusion_matrix": {
+        "true_negative": 47,
+        "false_positive": 50,
+        "false_negative": 5,
+        "true_positive": 98
+      },
+      "confusion_matrix_array": [
+        [
+          47,
+          50
+        ],
+        [
+          5,
+          98
+        ]
+      ],
+      "auc_roc": 0.8434591132018817,
+      "auc_pr": 0.8280469859497658
+    },
+    {
+      "intensity": 0.8,
+      "accuracy": 0.715,
+      "precision": {
+        "Non-Violent": 0.9,
+        "Violent": 0.6533333333333333,
+        "macro": 0.7766666666666666,
+        "weighted": 0.7729666666666667
+      },
+      "recall": {
+        "Non-Violent": 0.4639175257731959,
+        "Violent": 0.9514563106796117,
+        "macro": 0.7076869182264038,
+        "weighted": 0.715
+      },
+      "f1_score": {
+        "Non-Violent": 0.6122448979591837,
+        "Violent": 0.7747035573122529,
+        "macro": 0.6934742276357183,
+        "weighted": 0.6959111075260144
+      },
+      "specificity": 0.4639175257731959,
+      "confusion_matrix": {
+        "true_negative": 45,
+        "false_positive": 52,
+        "false_negative": 5,
+        "true_positive": 98
+      },
+      "confusion_matrix_array": [
+        [
+          45,
+          52
+        ],
+        [
+          5,
+          98
+        ]
+      ],
+      "auc_roc": 0.8384546091482334,
+      "auc_pr": 0.8212229483979152
+    },
+    {
+      "intensity": 1.0,
+      "accuracy": 0.695,
+      "precision": {
+        "Non-Violent": 0.8913043478260869,
+        "Violent": 0.6363636363636364,
+        "macro": 0.7638339920948616,
+        "weighted": 0.760009881422925
+      },
+      "recall": {
+        "Non-Violent": 0.422680412371134,
+        "Violent": 0.9514563106796117,
+        "macro": 0.6870683615253729,
+        "weighted": 0.695
+      },
+      "f1_score": {
+        "Non-Violent": 0.5734265734265734,
+        "Violent": 0.7626459143968871,
+        "macro": 0.6680362439117302,
+        "weighted": 0.6708745340262849
+      },
+      "specificity": 0.422680412371134,
+      "confusion_matrix": {
+        "true_negative": 41,
+        "false_positive": 56,
+        "false_negative": 5,
+        "true_positive": 98
+      },
+      "confusion_matrix_array": [
+        [
+          41,
+          56
+        ],
+        [
+          5,
+          98
+        ]
+      ],
+      "auc_roc": 0.8336502852567311,
+      "auc_pr": 0.8172953500016346
+    }
+  ]
+}

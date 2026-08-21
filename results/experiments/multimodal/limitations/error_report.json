@@ -1,0 +1,32 @@
+{
+  "summary": {
+    "total_samples": 0,
+    "false_positives": 36,
+    "false_negatives": 5,
+    "borderline_cases": 8,
+    "error_rates": {
+      "false_positive_rate": 0.18,
+      "false_negative_rate": 0.025,
+      "total_error_rate": 0.205
+    }
+  },
+  "false_positives": {
+    "total": 36,
+    "avg_probability": 0.7613750927978091,
+    "categories": {
+      "medium_confidence": 7,
+      "high_confidence": 3
+    }
+  },
+  "false_negatives": {
+    "total": 5,
+    "avg_probability": 0.1638811023440212,
+    "categories": {
+      "low_confidence": 5
+    }
+  },
+  "recommendations": [
+    "High false positive rate. Consider increasing threshold or improving training data.",
+    "False negatives have low confidence. Model may need more training or better features."
+  ]
+}

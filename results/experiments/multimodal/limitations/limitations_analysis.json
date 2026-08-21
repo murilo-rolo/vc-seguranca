@@ -1,0 +1,186 @@
+{
+  "false_positives": {
+    "count": 36,
+    "examples": [
+      {
+        "batch_idx": 0,
+        "sample_idx": 1,
+        "probability": 0.5023686289787292,
+        "true_label": 0,
+        "pred_label": 1
+      },
+      {
+        "batch_idx": 0,
+        "sample_idx": 3,
+        "probability": 0.9514515995979309,
+        "true_label": 0,
+        "pred_label": 1
+      },
+      {
+        "batch_idx": 1,
+        "sample_idx": 4,
+        "probability": 0.5181687474250793,
+        "true_label": 0,
+        "pred_label": 1
+      },
+      {
+        "batch_idx": 3,
+        "sample_idx": 1,
+        "probability": 0.7658022046089172,
+        "true_label": 0,
+        "pred_label": 1
+      },
+      {
+        "batch_idx": 3,
+        "sample_idx": 2,
+        "probability": 0.6268702745437622,
+        "true_label": 0,
+        "pred_label": 1
+      },
+      {
+        "batch_idx": 3,
+        "sample_idx": 3,
+        "probability": 0.6939362287521362,
+        "true_label": 0,
+        "pred_label": 1
+      },
+      {
+        "batch_idx": 3,
+        "sample_idx": 7,
+        "probability": 0.9088340401649475,
+        "true_label": 0,
+        "pred_label": 1
+      },
+      {
+        "batch_idx": 6,
+        "sample_idx": 5,
+        "probability": 0.9425690174102783,
+        "true_label": 0,
+        "pred_label": 1
+      },
+      {
+        "batch_idx": 7,
+        "sample_idx": 0,
+        "probability": 0.7060062289237976,
+        "true_label": 0,
+        "pred_label": 1
+      },
+      {
+        "batch_idx": 7,
+        "sample_idx": 1,
+        "probability": 0.5234247446060181,
+        "true_label": 0,
+        "pred_label": 1
+      }
+    ],
+    "avg_probability": 0.7613750927978091
+  },
+  "false_negatives": {
+    "count": 5,
+    "examples": [
+      {
+        "batch_idx": 2,
+        "sample_idx": 6,
+        "probability": 0.38966965675354004,
+        "true_label": 1,
+        "pred_label": 0
+      },
+      {
+        "batch_idx": 4,
+        "sample_idx": 2,
+        "probability": 0.35935476422309875,
+        "true_label": 1,
+        "pred_label": 0
+      },
+      {
+        "batch_idx": 5,
+        "sample_idx": 7,
+        "probability": 0.047937918454408646,
+        "true_label": 1,
+        "pred_label": 0
+      },
+      {
+        "batch_idx": 11,
+        "sample_idx": 1,
+        "probability": 0.0031970187555998564,
+        "true_label": 1,
+        "pred_label": 0
+      },
+      {
+        "batch_idx": 20,
+        "sample_idx": 3,
+        "probability": 0.01924615353345871,
+        "true_label": 1,
+        "pred_label": 0
+      }
+    ],
+    "avg_probability": 0.1638811023440212
+  },
+  "borderline_cases": {
+    "count": 8,
+    "examples": [
+      {
+        "batch_idx": 4,
+        "sample_idx": 3,
+        "probability": 0.41381093859672546,
+        "true_label": 0,
+        "pred_label": 0
+      },
+      {
+        "batch_idx": 6,
+        "sample_idx": 2,
+        "probability": 0.5461097359657288,
+        "true_label": 1,
+        "pred_label": 1
+      },
+      {
+        "batch_idx": 7,
+        "sample_idx": 2,
+        "probability": 0.5911872386932373,
+        "true_label": 1,
+        "pred_label": 1
+      },
+      {
+        "batch_idx": 8,
+        "sample_idx": 4,
+        "probability": 0.5857067704200745,
+        "true_label": 1,
+        "pred_label": 1
+      },
+      {
+        "batch_idx": 9,
+        "sample_idx": 7,
+        "probability": 0.4649707078933716,
+        "true_label": 0,
+        "pred_label": 0
+      },
+      {
+        "batch_idx": 14,
+        "sample_idx": 3,
+        "probability": 0.4292930066585541,
+        "true_label": 0,
+        "pred_label": 0
+      },
+      {
+        "batch_idx": 15,
+        "sample_idx": 3,
+        "probability": 0.5792225003242493,
+        "true_label": 1,
+        "pred_label": 1
+      },
+      {
+        "batch_idx": 23,
+        "sample_idx": 1,
+        "probability": 0.4534795880317688,
+        "true_label": 0,
+        "pred_label": 0
+      }
+    ],
+    "avg_probability": 0.5079725608229637
+  },
+  "error_rate": {
+    "false_positive_rate": 0.18,
+    "false_negative_rate": 0.025,
+    "total_error_rate": 0.205
+  }
+}

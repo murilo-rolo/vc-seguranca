@@ -1,0 +1,45 @@
+{
+  "method": "input_noise_perturbation",
+  "noise_std": {
+    "video": 0.05,
+    "pose": 0.05,
+    "emotion": 0.05
+  },
+  "modalities": {
+    "video": {
+      "mean_abs_logit_delta": 0.05684306561946869,
+      "logit_delta_per_class": [
+        0.06245864614844322,
+        0.051227485239505766
+      ],
+      "accuracy_drop": 0.01
+    },
+    "pose": {
+      "mean_abs_logit_delta": 0.021161626912653445,
+      "logit_delta_per_class": [
+        0.02422245088964701,
+        0.018100802823901176
+      ],
+      "accuracy_drop": 0.0
+    },
+    "emotion": {
+      "mean_abs_logit_delta": 0.019776473753154278,
+      "logit_delta_per_class": [
+        0.02202407754957676,
+        0.01752887001261115
+      ],
+      "accuracy_drop": -0.005
+    }
+  },
+  "ranking_by_logit_delta": [
+    "video",
+    "pose",
+    "emotion"
+  ],
+  "ranking_by_accuracy_drop": [
+    "video",
+    "pose",
+    "emotion"
+  ],
+  "sanity_zero_noise": null
+}
