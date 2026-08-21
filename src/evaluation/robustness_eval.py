@@ -11,7 +11,7 @@ Testa performance com:
 
 import torch
 import numpy as np
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 from pathlib import Path
 import json
 from tqdm import tqdm
@@ -144,13 +144,34 @@ class RobustnessEvaluator:
         
         return metrics
     
-    def _apply_distortion_to_batch(
+    @staticmethod
+    def _is_image_tensor(tensor: Any) -> bool:
+        """Verifica se um tensor corresponde a dados de imagem/vídeo distortionáveis.
+
+        Considera imagem/vídeo os tensores 5D (batch, T, C, H, W) ou 4D
+        (batch, C, H, W) cuja dimensão de canal é pequena (1 ou 3). Tensores de
+        outras modalidades (pose, emotion, etc.) não devem ser distorcidos.
+        """
+        if not isinstance(tensor, torch.Tensor):
+            return False
+        shape = tensor.shape
+        if len(shape) == 5:
+            return True
+        if len(shape) == 4:
+            return int(shape[1]) in (1, 3)
+        return False
+
+    def _apply_distortion_to_tensor(
         self,
         inputs: torch.Tensor,
         distortion_type: str,
         intensity: float
     ) -> torch.Tensor:
-        """Aplica distorção a um batch de inputs."""
+        """Aplica distorção a um único tensor de imagem/vídeo."""
+        # Tensores que não são imagem (pose, emotion, etc.) não são distorcidos
+        if not self._is_image_tensor(inputs):
+            return inputs
+
         # Converter tensor para numpy
         if len(inputs.shape) == 5:  # (batch, T, C, H, W)
             batch_size, T, C, H, W = inputs.shape
@@ -175,7 +196,7 @@ class RobustnessEvaluator:
             
             return distorted_tensor
         
-        elif len(inputs.shape) == 4:  # (batch, C, H, W) ou (batch, T, C, H, W) já processado
+        else:  # (batch, C, H, W)
             # Similar, mas sem dimensão temporal
             batch_size, C, H, W = inputs.shape
             inputs_np = inputs.permute(0, 2, 3, 1).cpu().numpy()  # (batch, H, W, C)
@@ -193,9 +214,29 @@ class RobustnessEvaluator:
             distorted_tensor = distorted_tensor.permute(0, 3, 1, 2)  # (batch, C, H, W)
             
             return distorted_tensor
-        
-        else:
-            raise ValueError(f"Formato de input não suportado: {inputs.shape}")
+
+    def _apply_distortion_to_batch(
+        self,
+        inputs: Any,
+        distortion_type: str,
+        intensity: float
+    ) -> Any:
+        """Aplica distorção a um batch de inputs.
+
+        Suporta tanto um único tensor quanto uma tupla/lista de tensores
+        (ex.: modelo multimodal com (video, pose, emotion)). Apenas os tensores
+        de imagem/vídeo são distorcidos; os demais são preservados.
+        """
+        if isinstance(inputs, (list, tuple)):
+            distorted = [
+                self._apply_distortion_to_tensor(x, distortion_type, intensity)
+                if isinstance(x, torch.Tensor) else x
+                for x in inputs
+            ]
+            # Preserva o tipo de container original (tuple ou list)
+            return type(inputs)(distorted)
+
+        return self._apply_distortion_to_tensor(inputs, distortion_type, intensity)
     
     def evaluate_all_distortions(
         self,
