@@ -373,8 +373,8 @@ def main():
     parser.add_argument(
         "--dataset_path",
         type=str,
-        default=None,
-        help="Caminho para o dataset de emoção (default: dataset/balanced-affectnet; fallback: dataset/AffectNet)"
+        default="dataset/balanced-affectnet",
+        help="Caminho para o dataset de emoção (default: dataset/balanced-affectnet)"
     )
     
     args = parser.parse_args()
