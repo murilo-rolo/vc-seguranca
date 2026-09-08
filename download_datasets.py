@@ -432,6 +432,38 @@ def extract_zip(zip_path: Path, dest_dir: Path, delete_after: bool = True) -> bo
         print(f"[ERRO] Falha na extração: {e}")
         return False
 
+def organize_emotion_classes(emotion_dataset: Path) -> bool:
+    """
+    Organiza as classes Anger, Surprise e Fear como Violent, e as classes Neutral, Happy e Sad como NonViolent.
+    Disgust e Contempt são excluidos por serem ambíguas e não se encaixarem bem no contexto da aplicação
+
+    Args:
+        emotion_dataset: Path do diretório que foi baixado o dataset de emoção
+
+    Returns:
+        True se sucesso, False se erro
+    """
+    if not emotion_dataset.exists():
+        print(f"[ERRO] Diretório do dataset de emoção não encontrado: {emotion_dataset}")
+        return False
+    
+    for folder in ["test", "val", "train"]:
+        folder2 = emotion_dataset / folder
+
+        for emotion in ["Contempt", "Disgust"]:
+            folder3 = folder2 / emotion
+            shutil.rmtree(folder3)
+
+        for emotion in ["Anger", "Surprise", "Fear"]:
+            folder3 = folder2 / emotion
+            folder3.rename(f"violent_{emotion.lower()}")
+
+        for emotion in ["Neutral", "Happy", "Sad"]:
+            folder3 = folder2 / emotion
+            folder3.rename(f"non_violent_{emotion.lower()}")
+
+    return True
+
 
 def download_rwf2000() -> bool:
     """Baixa e extrai o dataset RWF-2000."""
@@ -479,6 +511,9 @@ def download_affectnet() -> bool:
         return False
     
     if not extract_zip(zip_path, affectnet_dir, delete_after=True):
+        return False
+
+    if not organize_emotion_classes(affectnet_dir):
         return False
     
     # Enumerar e logar os nomes reais das pastas de classe por split
