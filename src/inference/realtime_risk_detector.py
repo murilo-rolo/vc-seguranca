@@ -209,14 +209,14 @@ class RealTimeRiskDetector:
         # Modelo de emoção
         if emotion_model_path:
             self.emotion_model = create_emotion_model(
-                num_emotions=8,
+                num_emotions=2,
                 checkpoint_path=emotion_model_path,
                 device=self.device
             )
         else:
             # Criar modelo básico sem checkpoint
             self.emotion_model = create_emotion_model(
-                num_emotions=8,
+                num_emotions=2,
                 pretrained=False,
                 device=self.device
             )

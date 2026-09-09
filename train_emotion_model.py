@@ -2,7 +2,7 @@
 Script de treinamento para modelo de Emotion Recognition no dataset AffectNet.
 
 Arquitetura: DeiT-Small (Data-efficient Image Transformer) pré-treinada no ImageNet,
-adaptada para classificação de 8 emoções faciais.
+adaptada para classificação binária: violent / non_violent.
 """
 
 import argparse
@@ -24,14 +24,8 @@ from src import paths as p
 
 # Mapeamento de classes AffectNet
 AFFECTNET_CLASSES = {
-    'neutral': 0,
-    'happy': 1,
-    'sad': 2,
-    'anger': 3,
-    'fear': 4,
-    'disgust': 5,
-    'surprise': 6,
-    'contempt': 7
+    'violent': 0,
+    'non_violent': 1
 }
 
 
@@ -77,11 +71,15 @@ class AffectNetDataset(Dataset):
 
     Estrutura esperada (folder mode, balanced-affectnet):
     dataset/balanced-affectnet/
-    ├── train/<Classe>/*.png
-    ├── val/<Classe>/*.png
-    └── test/<Classe>/*.png
+    ├── train/violent/*.png
+    ├── val/violent/*.png
+    ├── test/violent/*.png
+    ├── train/non_violent/*.png
+    ├── val/non_violent/*.png
+    └── test/non_violent/*.png
 
-    No folder mode a lista de classes é derivada das pastas reais (ordenadas);
+    No folder mode a lista de classes é derivada das pastas
+    "violent" e "non_violent" do split (ordenadas);
     labels = índice nessa lista. `min_confidence` só se aplica ao CSV mode.
     """
     
@@ -433,7 +431,7 @@ def main():
     
     if args.resume and resume_checkpoint_path.exists():
         model, ckpt = create_emotion_model(
-            num_emotions=8, pretrained=True,
+            num_emotions=2, pretrained=True,
             checkpoint_path=str(resume_checkpoint_path),
             resume_training=True, device=args.device
         )
@@ -442,7 +440,7 @@ def main():
         print(f"Retomando treino da época {ckpt['epoch']} (val_acc: {ckpt['val_acc']:.2f}%)")
     else:
         model = create_emotion_model(
-            num_emotions=8, pretrained=True,
+            num_emotions=2, pretrained=True,
             device=args.device
         )
         best_val_acc = 0.0
@@ -509,7 +507,7 @@ def main():
     print(f"Sampler balanceado (--balance-classes): {'ON' if args.balance_classes else 'OFF'}")
     print(f"Early stop patience: {args.early_stop_patience}")
     print(f"Min confidence: {args.min_confidence} (aplica-se apenas a datasets CSV)")
-    print(f"Classifier:           Linear(384→128→8)")
+    print(f"Classifier:           Linear(384→128→2)")
     print(f"Loss function:         Focal Loss (γ={args.focal_gamma})")
     print(f"Resume: {'ON (época ' + str(ckpt['epoch']) + ')' if args.resume and ckpt is not None else 'OFF'}")
     print("=" * 60)

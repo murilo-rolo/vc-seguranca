@@ -217,7 +217,7 @@ def cmd_emotion(args):
     print("Carregando modelo de emoção...")
     try:
         model = create_emotion_model(
-            num_emotions=8,
+            num_emotions=2,
             pretrained=True,
             checkpoint_path=checkpoint_path,
             device=device
@@ -318,7 +318,7 @@ def cmd_all(args):
     print("\nCarregando modelo de emoção...")
     try:
         model = create_emotion_model(
-            num_emotions=8,
+            num_emotions=2,
             pretrained=True,
             checkpoint_path=checkpoint_path,
             device=device

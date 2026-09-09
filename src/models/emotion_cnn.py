@@ -6,15 +6,9 @@ adaptada para classificação de emoções usando o dataset AffectNet.
 
 DeiT-Small: 22M parâmetros, embed_dim=384, depth=12, num_heads=6, patch_size=16.
 
-Classes de emoção (8 classes padrão):
-- 0: Neutral
-- 1: Happy
-- 2: Sad
-- 3: Anger
-- 4: Fear
-- 5: Disgust
-- 6: Surprise
-- 7: Contempt
+Classes de emoção (2 classes):
+- 0: Violent
+- 1: Non-Violent
 """
 
 import torch
@@ -32,23 +26,22 @@ class EmotionNet(nn.Module):
     
     Arquitetura:
     1. DeiT-Small pré-treinada (backbone, sem classifier)
-    2. Classifier 2-layer: Linear(384, 128) → ReLU → Linear(128, 8)
+    2. Classifier 2-layer: Linear(384, 128) → ReLU → Linear(128, 2)
     """
 
     EMOTION_CLASSES = [
-        'neutral', 'happy', 'sad', 'anger', 
-        'fear', 'disgust', 'surprise', 'contempt'
-    ]
+    'violent', 'non_violent'
+]
     
     def __init__(
         self,
-        num_emotions: int = 8,
+        num_emotions: int = 2,
         pretrained: bool = True,
         input_size: Tuple[int, int] = (224, 224),
     ):
         """
         Args:
-            num_emotions: Número de classes de emoção (padrão: 8 para AffectNet)
+            num_emotions: Número de classes de emoção (padrão: 2 para binary classification)
             pretrained: Se True, usa DeiT-Small pré-treinada no ImageNet
             input_size: Tamanho de entrada (altura, largura) - padrão: (224, 224)
         """
@@ -150,7 +143,7 @@ class EmotionNet(nn.Module):
 
 
 def create_emotion_model(
-    num_emotions: int = 8,
+    num_emotions: int = 2,
     pretrained: bool = True,
     input_size: Tuple[int, int] = (224, 224),
     checkpoint_path: Optional[str] = None,

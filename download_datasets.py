@@ -434,8 +434,21 @@ def extract_zip(zip_path: Path, dest_dir: Path, delete_after: bool = True) -> bo
 
 def organize_emotion_classes(emotion_dataset: Path) -> bool:
     """
-    Organiza as classes Anger, Surprise e Fear como Violent, e as classes Neutral, Happy e Sad como NonViolent.
-    Disgust e Contempt são excluidos por serem ambíguas e não se encaixarem bem no contexto da aplicação
+    Organiza as classes Anger, Surprise e Fear sob violent/, e as classes Neutral, Happy e Sad sob non_violent/.
+    Disgust e Contempt são excluídos por serem ambíguas e não se encaixarem bem no contexto da aplicação.
+    As imagens são renomeadas com o prefixo da emoção + sequência numérica (ex: anger_00001.png).
+
+    Estrutura resultante por split:
+        balanced-affectnet/
+        ├── train/
+        │   ├── violent/anger_00001.png, anger_00002.png, ...
+        │   └── non_violent/neutral_00001.png, happy_00001.png, ...
+        ├── val/
+        │   ├── violent/...
+        │   └── non_violent/...
+        └── test/
+            ├── violent/...
+            └── non_violent/...
 
     Args:
         emotion_dataset: Path do diretório que foi baixado o dataset de emoção
@@ -446,21 +459,41 @@ def organize_emotion_classes(emotion_dataset: Path) -> bool:
     if not emotion_dataset.exists():
         print(f"[ERRO] Diretório do dataset de emoção não encontrado: {emotion_dataset}")
         return False
-    
+
+    emotion_to_dir = {
+        "Anger": "violent", "Surprise": "violent", "Fear": "violent",
+        "Neutral": "non_violent", "Happy": "non_violent", "Sad": "non_violent",
+    }
+
     for folder in ["test", "val", "train"]:
         folder2 = emotion_dataset / folder
 
         for emotion in ["Contempt", "Disgust"]:
             folder3 = folder2 / emotion
-            shutil.rmtree(folder3)
+            if folder3.exists():
+                shutil.rmtree(folder3)
 
-        for emotion in ["Anger", "Surprise", "Fear"]:
-            folder3 = folder2 / emotion
-            folder3.rename(f"violent_{emotion.lower()}")
+        for emotion, target_subdir in emotion_to_dir.items():
+            src_dir = folder2 / emotion
+            target_dir = folder2 / target_subdir
+            target_dir.mkdir(parents=True, exist_ok=True)
 
-        for emotion in ["Neutral", "Happy", "Sad"]:
-            folder3 = folder2 / emotion
-            folder3.rename(f"non_violent_{emotion.lower()}")
+            if not src_dir.exists():
+                continue
+
+            emotion_files = sorted(src_dir.glob("*.png"))
+            if not emotion_files:
+                emotion_files = sorted(src_dir.glob("*.jpg")) + sorted(src_dir.glob("*.jpeg"))
+
+            for i, img_path in enumerate(emotion_files):
+                suffix = img_path.suffix
+                new_name = f"{emotion.lower()}_{i+1:05d}{suffix}"
+                dst_path = target_dir / new_name
+                if dst_path.exists():
+                    shutil.rmtree(dst_path) if dst_path.is_dir() else dst_path.unlink()
+                shutil.copy2(str(img_path), str(dst_path))
+
+            shutil.rmtree(src_dir)
 
     return True
 
@@ -500,10 +533,14 @@ def download_affectnet() -> bool:
     url = "https://www.kaggle.com/api/v1/datasets/download/dollyprajapati182/balanced-affectnet"
     affectnet_dir = p.DATASET_ROOT / "balanced-affectnet"
     
-    # Idempotente: se a pasta alvo existe, não re-baixar (mesma convenção do download_rwf2000)
-    if affectnet_dir.exists():
-        print(f"[SKIP] Diretório já existe: {affectnet_dir}")
+    # Idempotente: se o dataset já existe e está organizado, não re-baixar
+    val_dir = affectnet_dir / "val"
+    if affectnet_dir.exists() and (val_dir / "violent").exists():
+        print(f"[SKIP] Dataset já organizado: {affectnet_dir}")
         return True
+    
+    if affectnet_dir.exists():
+        shutil.rmtree(affectnet_dir)
     
     zip_path = p.DATASET_ROOT / "balanced-affectnet.zip"
     
