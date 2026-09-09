@@ -55,8 +55,7 @@ def _print_header(title: str, fields: dict):
     print()
 
 
-def _process_rwf2000_pose(num_frames, min_detection_confidence,
-                          min_tracking_confidence, model_complexity):
+def _process_rwf2000_pose(num_frames, model_complexity, conf=0.5, iou=0.7):
     from src.pose.extract_pose import process_dataset_for_pose
 
     rwf2000_path = p.DATASET_ROOT / "RWF-2000"
@@ -69,9 +68,9 @@ def _process_rwf2000_pose(num_frames, min_detection_confidence,
             output_root=str(p.POSE_ROOT),
             dataset_name="rwf2000",
             num_frames=num_frames,
-            min_detection_confidence=min_detection_confidence,
-            min_tracking_confidence=min_tracking_confidence,
-            model_complexity=model_complexity
+            model_complexity=model_complexity,
+            conf=conf,
+            iou=iou,
         )
     else:
         print(f"\nAviso: Dataset RWF-2000 não encontrado em {rwf2000_path}")
@@ -131,16 +130,16 @@ def cmd_frames(args):
 
 
 def cmd_pose(args):
-    """Extrai keypoints de pose (MediaPipe) do dataset RWF-2000."""
+    """Extrai keypoints de pose (YOLO26) do dataset RWF-2000."""
     if not _check_dataset_root():
         return
 
     # Validar limites dos parâmetros de confiança
-    if not (0.0 <= args.min_detection_confidence <= 1.0):
-        raise SystemExit("--min_detection_confidence deve estar entre 0.0 e 1.0")
+    if not (0.0 <= args.conf <= 1.0):
+        raise SystemExit("--conf deve estar entre 0.0 e 1.0")
 
-    if not (0.0 <= args.min_tracking_confidence <= 1.0):
-        raise SystemExit("--min_tracking_confidence deve estar entre 0.0 e 1.0")
+    if not (0.0 <= args.iou <= 1.0):
+        raise SystemExit("--iou deve estar entre 0.0 e 1.0")
 
     # Validar num_frames se fornecido
     if args.num_frames is not None and args.num_frames <= 0:
@@ -155,19 +154,19 @@ def cmd_pose(args):
             "Saída raiz": str(p.POSE_ROOT),
             "Dataset": "RWF-2000",
             "Número de frames": args.num_frames if args.num_frames else "Todos",
-            "Confiança detecção": f"{args.min_detection_confidence} (range: 0.0-1.0)",
-            "Confiança rastreamento": f"{args.min_tracking_confidence} (range: 0.0-1.0)",
-            "Complexidade modelo": f"{args.model_complexity} (0=Lite, 1=Full, 2=Heavy)",
+            "Confiança detecção": f"{args.conf} (range: 0.0-1.0)",
+            "IoU NMS": f"{args.iou} (range: 0.0-1.0)",
+            "Complexidade modelo": f"{args.model_complexity} (0=nano, 1=small, 2=medium)",
         }
     )
 
     # Avisos sobre valores aumentados
-    if args.min_detection_confidence > 0.7:
-        print(f"⚠️  AVISO: Confiança de detecção alta ({args.min_detection_confidence}) pode reduzir detecções válidas")
-    if args.min_tracking_confidence > 0.7:
-        print(f"⚠️  AVISO: Confiança de rastreamento alta ({args.min_tracking_confidence}) pode perder rastreamento em movimentos rápidos")
+    if args.conf > 0.7:
+        print(f"⚠️  AVISO: Confiança de detecção alta ({args.conf}) pode reduzir detecções válidas")
+    if args.iou < 0.3:
+        print(f"⚠️  AVISO: IoU baixo ({args.iou}) pode detectar muitas caixas duplicadas")
     if args.model_complexity == 2:
-        print("ℹ️  INFO: Modelo Heavy (complexidade 2) será mais lento mas mais preciso")
+        print("ℹ️  INFO: Modelo medium (complexidade 2) será mais lento mas mais preciso")
     if args.num_frames and args.num_frames > 32:
         print(f"ℹ️  INFO: Processando {args.num_frames} frames por vídeo (pode aumentar tempo de processamento)")
 
@@ -175,9 +174,9 @@ def cmd_pose(args):
 
     _process_rwf2000_pose(
         args.num_frames,
-        args.min_detection_confidence,
-        args.min_tracking_confidence,
-        args.model_complexity
+        args.model_complexity,
+        args.conf,
+        args.iou
     )
 
     print("\n" + "=" * 60)
@@ -299,9 +298,9 @@ def cmd_all(args):
     p.POSE_ROOT.mkdir(parents=True, exist_ok=True)
     _process_rwf2000_pose(
         args.num_frames,
-        args.min_detection_confidence,
-        args.min_tracking_confidence,
-        args.model_complexity
+        args.model_complexity,
+        args.conf,
+        args.iou
     )
 
     # Etapa 4: Extrair emoções
@@ -419,24 +418,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="Número de frames a processar por vídeo (None = todos os frames)"
     )
     p_pose.add_argument(
-        "--min_detection_confidence", type=float, default=0.5,
-        help="Confiança mínima para detecção inicial (padrão: 0.5, range: 0.0-1.0). "
+        "--conf", type=float, default=0.5,
+        help="Confiança mínima para detecção (padrão: 0.5, range: 0.0-1.0). "
              "Valores mais altos (0.7-0.9) reduzem falsos positivos mas podem perder detecções válidas. "
              "Recomendado: 0.5-0.7 para melhor balanceamento."
     )
     p_pose.add_argument(
-        "--min_tracking_confidence", type=float, default=0.5,
-        help="Confiança mínima para rastreamento (padrão: 0.5, range: 0.0-1.0). "
-             "Valores mais altos (0.7-0.9) melhoram estabilidade mas podem perder rastreamento em movimentos rápidos. "
-             "Recomendado: 0.5-0.7 para melhor balanceamento."
+        "--iou", type=float, default=0.7,
+        help="IoU mínima para NMS (padrão: 0.7, range: 0.0-1.0). "
+             "Valores mais baixos detectam mais caixas, valores mais altos reduzem duplicatas."
     )
     p_pose.add_argument(
         "--model_complexity", type=int, choices=[0, 1, 2], default=1,
-        help="Complexidade do modelo MediaPipe (padrão: 1). "
-             "0=Lite (mais rápido, menos preciso), "
-             "1=Full (balanceado), "
-             "2=Heavy (mais lento, mais preciso). "
-             "Recomendado: 2 para máxima precisão em detecção de ameaças."
+        help="Complexidade do modelo YOLO26 (padrão: 1). "
+             "0=nano (mais rápido, menos preciso), "
+             "1=small (balanceado), "
+             "2=medium (mais lento, mais preciso)."
     )
     p_pose.set_defaults(func=cmd_pose)
 
@@ -494,16 +491,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Número de workers paralelos para extração de frames (padrão: cpu_count/4)"
     )
     p_all.add_argument(
-        "--min_detection_confidence", type=float, default=0.5,
-        help="Confiança mínima para detecção de pose (padrão: 0.5)"
-    )
-    p_all.add_argument(
-        "--min_tracking_confidence", type=float, default=0.5,
-        help="Confiança mínima para rastreamento de pose (padrão: 0.5)"
-    )
-    p_all.add_argument(
         "--model_complexity", type=int, choices=[0, 1, 2], default=1,
-        help="Complexidade do modelo MediaPipe (padrão: 1)"
+        help="Complexidade do modelo YOLO26 (padrão: 1)"
+    )
+    p_all.add_argument(
+        "--conf", type=float, default=0.5,
+        help="Confiança mínima para detecção YOLO26 (padrão: 0.5)"
+    )
+    p_all.add_argument(
+        "--iou", type=float, default=0.7,
+        help="IoU mínima para NMS YOLO26 (padrão: 0.7)"
     )
     p_all.add_argument(
         "--face_detector", type=str, choices=["mtcnn", "retinaface", "haar"], default="mtcnn",

@@ -196,7 +196,7 @@ class RealTimeRiskDetector:
 
         self.multimodal_model = create_multimodal_model(
             video_feature_dim=multimodal_checkpoint.get('video_feature_dim', video_feature_dim),
-            pose_feature_dim=99,
+            pose_feature_dim=51,
             emotion_feature_dim=multimodal_checkpoint.get('emotion_feature_dim', 128),
             num_frames=self.num_frames,
             fusion_method=fusion_method,
@@ -292,11 +292,11 @@ class RealTimeRiskDetector:
             keypoints = self.pose_extractor.extract_keypoints_from_frame(frame)
             if keypoints is None:
                 # Se não detectar, usar zeros
-                keypoints = np.zeros((33, 3))
+                keypoints = np.zeros((17, 3))
             keypoints_list.append(keypoints)
         
         # Converter para tensor
-        keypoints_array = np.array(keypoints_list)  # (T, 33, 3)
+        keypoints_array = np.array(keypoints_list)  # (T, 17, 3)
         keypoints_tensor = torch.from_numpy(keypoints_array).float()
         
         return keypoints_tensor
@@ -341,17 +341,17 @@ class RealTimeRiskDetector:
         """
         # Extrair features
         video_features = self._extract_video_features(frames)  # (1, D_v)
-        pose_features = self._extract_pose_features(frames)  # (T, 33, 3)
+        pose_features = self._extract_pose_features(frames)  # (T, 17, 3)
         emotion_features = self._extract_emotion_features(frames)  # (T, 128)
         
         # Converter para formato do modelo multimodal
         video_features = video_features.to(self.device)  # (1, D_v) clip token
-        pose_features = pose_features.unsqueeze(0).to(self.device)  # (1, T, 33, 3)
+        pose_features = pose_features.unsqueeze(0).to(self.device)  # (1, T, 17, 3)
         emotion_features = emotion_features.unsqueeze(0).to(self.device)  # (1, T, 128)
         
         # Flatten pose se necessário
         if len(pose_features.shape) == 4:
-            pose_features = pose_features.view(1, self.num_frames, -1)  # (1, T, 99)
+            pose_features = pose_features.view(1, self.num_frames, -1)  # (1, T, 51)
         
         # Inferência multimodal
         with torch.no_grad():

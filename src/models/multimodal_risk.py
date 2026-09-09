@@ -40,7 +40,7 @@ class MultimodalRiskDetector(nn.Module):
         self,
         # Dimensões de entrada
         video_feature_dim: int = 512,      # D_v: saída do CNN 3D (padrão) / ResNet-LSTM
-        pose_feature_dim: int = 99,        # D_p: 33 joints * 3 (x, y, visibility) se flatten
+        pose_feature_dim: int = 51,        # D_p: 17 joints * 3 (x, y, confidence) se flatten
         emotion_feature_dim: int = 128,    # D_e: 128-d embeddings de emoção
         num_frames: int = 16,              # T: tamanho da janela temporal
 
@@ -321,7 +321,7 @@ class MultimodalRiskDetector(nn.Module):
 
 def create_multimodal_model(
     video_feature_dim: int = 512,
-    pose_feature_dim: int = 99,
+    pose_feature_dim: int = 51,
     emotion_feature_dim: int = 128,
     num_frames: int = 16,
     fusion_method: Literal["cross_attention"] = "cross_attention",

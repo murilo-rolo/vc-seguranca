@@ -17,7 +17,7 @@ multimodal/
 ## Modalidades
 
 - **Video Features**: CNN 3D R2Plus1D (512 dims, **padrão**) ou ResNet-LSTM (256 dims) — token de consulta
-- **Pose Features**: Keypoints de pose (MediaPipe, 99 dims por frame)
+- **Pose Features**: Keypoints de pose (YOLO26, 51 dims por frame: 17 joints × 3)
 - **Emotion Features**: Embeddings de 128 dims (penúltima camada do EmotionNet) — não mais probabilidades de 8 classes. Por frame, **todas** as faces detectadas são agregadas em um único embedding (mean/max, `--face_aggregation`); sem faces → embedding neutro
 
 ## Dataset Utilizado

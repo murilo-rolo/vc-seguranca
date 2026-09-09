@@ -65,7 +65,7 @@ class PoseSubModel(nn.Module):
 
     def __init__(
         self,
-        pose_feature_dim: int = 99,
+        pose_feature_dim: int = 51,
         pose_hidden_dim: int = 64,
         fusion_dim: int = 256,
         use_temporal_modeling: bool = True,
@@ -144,7 +144,7 @@ class _MultimodalEvalWrapper(nn.Module):
 
 def _infer_pose_submodel_dims(state_dict) -> dict:
     """Infere as dimensões do sub-modelo de pose a partir do state_dict."""
-    dims = {"use_temporal_modeling": True, "pose_feature_dim": 99,
+    dims = {"use_temporal_modeling": True, "pose_feature_dim": 51,
             "pose_hidden_dim": 64, "fusion_dim": 256, "num_classes": 2}
 
     if "pose_processor.weight_ih_l0" in state_dict:  # LSTM
@@ -202,7 +202,7 @@ def load_model(
 
         model = create_multimodal_model(
             video_feature_dim=video_feature_dim,
-            pose_feature_dim=99,
+            pose_feature_dim=51,
             emotion_feature_dim=128,
             num_frames=16,
             fusion_method=fusion_method,

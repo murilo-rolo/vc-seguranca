@@ -210,7 +210,7 @@ Arquitetura multimodal que combina todas as modalidades:
 ```
 ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐
 │  Video Features │  │  Pose Features  │  │ Emotion Features│
-│  (ResNet-LSTM)  │  │  (MediaPipe)    │  │  (EmotionNet)   │
+│  (ResNet-LSTM)  │  │  (YOLO26)     │  │  (EmotionNet)   │
 │  T × 256        │  │  T × 99         │  │  T × 128        │
 │  (CNN3D: T×512) │  │                 │  │  (embeddings)   │
 └────────┬────────┘  └────────┬────────┘  └────────┬────────┘
@@ -242,7 +242,7 @@ Arquitetura multimodal que combina todas as modalidades:
 
 **Modalidades:**
 - **Vídeo**: Features extraídas do CNN 3D R2Plus1D (512 dims, **padrão**) ou ResNet-LSTM (256 dims) — usadas como *token* de consulta
-- **Pose**: 33 keypoints do MediaPipe (99 dims: x, y, visibility)
+- **Pose**: 17 keypoints do YOLO26 (51 dims: x, y, confidence)
 - **Emoção**: embeddings de 128 dims da penúltima camada do EmotionNet (não mais probabilidades de 8 classes)
 
 ## Instalação
@@ -305,7 +305,7 @@ Todo o pré-processamento é feito por **um único script** (`run_preprocessing.
 |---|---|
 | `organize` | Organiza os vídeos do RWF-2000 em `data/raw` |
 | `frames` | Extrai N frames por vídeo, redimensiona e normaliza em `data/processed` |
-| `pose` | Extrai keypoints de pose (MediaPipe) em `data/pose` |
+| `pose` | Extrai keypoints de pose (YOLO26) em `data/pose` |
 | `emotion` | Extrai vetores de emoção (EmotionNet) em `data/emotion` |
 | `all` | Executa todas as etapas em sequência |
 
@@ -340,7 +340,7 @@ python -m src.preprocessing.extract_frames
 
 #### Passo 3: Extrair keypoints de pose
 
-Extrai keypoints de pose usando MediaPipe:
+Extrai keypoints de pose usando YOLO26:
 
 ```bash
 python run_preprocessing.py pose --num_frames 16
@@ -348,9 +348,9 @@ python run_preprocessing.py pose --num_frames 16
 
 **Opções:**
 - `--num_frames`: Número de frames a processar por vídeo (None = todos)
-- `--min_detection_confidence`: Confiança mínima de detecção (padrão 0.5; 0.5-0.7 recomendado)
-- `--min_tracking_confidence`: Confiança mínima de rastreamento (padrão 0.5)
-- `--model_complexity`: `0` (Lite), `1` (Full, padrão) ou `2` (Heavy)
+- `--conf`: Confiança mínima para detecção (padrão 0.5; 0.5-0.7 recomendado)
+- `--iou`: IoU mínima para NMS (padrão 0.7)
+- `--model_complexity`: `0` (nano), `1` (small, padrão) ou `2` (medium)
 
 #### Passo 4: Extrair emoções faciais
 
@@ -697,7 +697,7 @@ vc-seguranca/
 │   │   ├── rwf2000/                   # Pose do RWF-2000
 │   │   │   ├── train/
 │   │   │   │   ├── violent/           # Pose de vídeos violentos (treino)
-│   │   │   │   │   └── <video_id>.npy # Shape: (num_frames, 33, 3)
+│   │   │   │   │   └── <video_id>.npy # Shape: (num_frames, 17, 3)
 │   │   │   │   └── non_violent/       # Pose de vídeos não violentos (treino)
 │   │   │   │       └── <video_id>.npy
 │   │   │   └── val/                   # Pose de vídeos (validação)
@@ -729,8 +729,8 @@ vc-seguranca/
 
 **Pose (Keypoints):**
 - **Estrutura**: `data/pose/rwf2000/{split}/{violent|non_violent}/<video_id>.npy`
-- **Formato**: Array NumPy com shape `(num_frames, 33, 3)`
-  - 33 keypoints do MediaPipe
+- **Formato**: Array NumPy com shape `(num_frames, 17, 3)`
+  - 17 keypoints do YOLO26 (COCO)
   - 3 valores: (x, y, visibility)
 - **Exemplo**: `data/pose/rwf2000/train/violent/video_0001.npy`
 
@@ -843,7 +843,7 @@ vc-seguranca/
 - `scikit-learn>=1.3.0` - Métricas de avaliação
 - `tqdm>=4.65.0` - Barras de progresso
 - `Pillow>=10.0.0` - Processamento de imagens
-- `mediapipe>=0.10.0` - Detecção de pose
+- `ultralytics>=8.0.0` - Detecção de pose
 - `facenet-pytorch>=2.5.0` - Detecção de faces
 - `matplotlib>=3.7.0` - Plotagem de gráficos (curvas ROC, PR)
 - `seaborn>=0.12.0` - Visualização de matriz de confusão
@@ -999,9 +999,9 @@ Se preferir executar manualmente:
 - **R(2+1)D**: A Closer Look at Spatiotemporal Convolutions (Tran et al., 2018)
 - **DeiT**: Training Data-efficient Image Transformers & Distillation through Attention (Touvron et al., 2021)
 - **Focal Loss**: Focal Loss for Dense Object Detection (Lin et al., 2017)
-- **MediaPipe**: Framework de ML para detecção de pose
+- **YOLO26**: Framework de ML para detecção de pose
 
 ### Ferramentas
 - **PyTorch**: Framework de Deep Learning
 - **OpenCV**: Biblioteca de Visão Computacional
-- **MediaPipe**: Detecção de pose e landmarks
+- **YOLO26**: Detecção de pose e keypoints

@@ -21,14 +21,14 @@ from src import paths as p
 class PoseSequenceDataset(Dataset):
     """
     Dataset para sequências de keypoints de pose.
-    
+
     Lê arquivos .npy com keypoints e retorna janelas temporais de tamanho fixo.
-    
+
     Formato dos dados:
-    - Input: arquivo .npy com shape (T, num_joints, 3) onde 3 = (x, y, visibility)
+    - Input: arquivo .npy com shape (T, num_joints, 3) onde 3 = (x, y, confidence)
     - Output: tensor (window_size, num_joints, 3) ou (window_size, num_joints * 3)
     """
-    
+
     def __init__(
         self,
         pose_data_root: str,
@@ -41,8 +41,43 @@ class PoseSequenceDataset(Dataset):
         use_original_split: bool = True,
         val_test_split_ratio: float = 0.5,
         seed: int = 42,
-        dataset_name: str = "rwf2000"  # "rwf2000"
+        dataset_name: str = "rwf2000",
+        num_joints: int = 17,
     ):
+        """
+        Inicializa o dataset de pose.
+
+        IMPORTANTE: Por padrão, agora preserva a divisão original do RWF-2000
+        (train/val) para evitar data leakage.
+
+        Args:
+            pose_data_root: Raiz dos dados de pose (ex: "data/pose")
+            split: "train", "val" ou "test"
+            window_size: Tamanho da janela temporal (número de frames)
+            stride: Stride para criar janelas (1 = todas as janelas possíveis)
+            normalize: Se True, normaliza keypoints para média 0 e std 1
+            flatten: Se True, retorna (window_size, num_joints * 3) ao invés de (window_size, num_joints, 3)
+            transform: Transformações a aplicar (augmentations)
+            use_original_split: Se True (padrão), usa divisão original do RWF-2000.
+                                Se False, usa divisão aleatória (DEPRECADO - causa data leakage).
+            val_test_split_ratio: Se use_original_split=True, divide o val original em val e test
+                                  usando esta proporção (padrão: 0.5 = 50/50)
+            seed: Seed para reprodutibilidade
+            dataset_name: Nome do dataset ("rwf2000")
+            num_joints: Número de keypoints de pose (padrão: 17 para YOLO26)
+        """
+        self.pose_data_root = Path(pose_data_root)
+        self.split = split
+        self.window_size = window_size
+        self.stride = stride
+        self.normalize = normalize
+        self.flatten = flatten
+        self.transform = transform
+        self.dataset_name = dataset_name.lower()
+        self.use_original_split = use_original_split
+        self.val_test_split_ratio = val_test_split_ratio
+        self.seed = seed
+        self.num_joints = num_joints
         """
         Inicializa o dataset de pose.
         
@@ -218,7 +253,7 @@ dataset_name: Nome do dataset ("rwf2000")
         
         if len(all_keypoints) == 0:
             # Se não conseguir carregar, retornar zeros
-            return np.zeros((33, 3)), np.ones((33, 3))
+            return np.zeros((self.num_joints, 3)), np.ones((self.num_joints, 3))
         
         # Concatenar todos os keypoints
         all_keypoints = np.concatenate(all_keypoints, axis=0)  # (total_frames, num_joints, 3)

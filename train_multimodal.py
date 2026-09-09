@@ -163,7 +163,7 @@ def main():
     # Criar modelo multimodal com wrapper
     print("Criando modelo multimodal...")
     multimodal_model = create_multimodal_model(
-        video_feature_dim=video_feature_dim, pose_feature_dim=99, emotion_feature_dim=128,
+        video_feature_dim=video_feature_dim, pose_feature_dim=51, emotion_feature_dim=128,
         num_frames=args.window_size, fusion_method="cross_attention",
         use_temporal_modeling=args.use_temporal_modeling, device=args.device
     )

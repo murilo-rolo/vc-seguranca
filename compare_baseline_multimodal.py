@@ -195,7 +195,7 @@ def main():
 
     multimodal_model = create_multimodal_model(
         video_feature_dim=video_feature_dim,
-        pose_feature_dim=99,
+        pose_feature_dim=51,
         emotion_feature_dim=128,
         num_frames=16,
         fusion_method=fusion_method,

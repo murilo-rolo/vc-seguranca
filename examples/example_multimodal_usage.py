@@ -55,7 +55,7 @@ def example_create_model():
     # Criar modelo com cross-attention (única fusão suportada)
     model = create_multimodal_model(
         video_feature_dim=512,
-        pose_feature_dim=99,
+        pose_feature_dim=51,
         emotion_feature_dim=128,
         num_frames=16,
         fusion_method="cross_attention",
@@ -92,7 +92,7 @@ def example_training_loop():
     # Criar modelo
     model = create_multimodal_model(
         video_feature_dim=512,
-        pose_feature_dim=99,
+        pose_feature_dim=51,
         emotion_feature_dim=128,
         num_frames=16,
         fusion_method="cross_attention",
