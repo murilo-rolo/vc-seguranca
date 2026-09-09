@@ -136,7 +136,7 @@ def calculate_multiclass_metrics(
     class_names: Optional[List[str]] = None
 ) -> Dict:
     """
-    Calcula métricas multiclasse (ex: 8 emoções do EmotionNet).
+    Calcula métricas multiclasse (ex: 2 classes do EmotionNet).
 
     Args:
         y_true: Labels verdadeiros (índices de 0 a K-1)

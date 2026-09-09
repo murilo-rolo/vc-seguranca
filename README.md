@@ -86,7 +86,7 @@ dataset/RWF-2000/
 
 **Balanced-AffectNet** - Usado para treinar o modelo de reconhecimento de emoções faciais:
 
-- **8 classes de emoção**: Anger, Disgust, Fear, Happy, Neutral, Sad, Surprise, Contempt
+- **2 classes de emoção**: Violent, Non-Violent
 - **41.008 imagens** balanceadas de faces (sem desbalanceamento entre classes)
 - Imagens em RGB 75×75 PNG, organizadas em pastas por classe
 - Disponível em: [Balanced-AffectNet (Kaggle)](https://www.kaggle.com/datasets/dollyprajapati182/balanced-affectnet)
@@ -94,9 +94,12 @@ dataset/RWF-2000/
 **Estrutura esperada:**
 ```
 dataset/balanced-affectnet/
-├── train/<Classe>/*.png
-├── val/<Classe>/*.png
-└── test/<Classe>/*.png
+├── train/violent/*.png
+├── train/non_violent/*.png
+├── val/violent/*.png
+├── val/non_violent/*.png
+├── test/violent/*.png
+└── test/non_violent/*.png
 ```
 
 > **Nota**: As classes são derivadas das pastas reais (ordenadas) e os labels são o índice nessa lista. O dataset balanceado não possui `labels.csv`; o formato legado `dataset/AffectNet` (com `labels.csv` e pastas `Train/`/`Test/`) continua suportado como fallback. O modelo é salvo em `models/emotion_cnn/weights/best_model.pth`.
@@ -117,7 +120,7 @@ python download_datasets.py --affectnet
 **Recursos do script:**
 - Download com barra de progresso e retomada (pula arquivos já existentes)
 - Extração robusta de ZIPs: corrige nomes em UTF-8/Cirílico (ex.: vídeos do RWF-2000), evita path traversal e trunca nomes muito longos
-- Baixa o **balanced-affectnet** (`dollyprajapati182/balanced-affectnet`) já extraído na estrutura `{train,val,test}/<Classe>/*.png`
+- Baixa o **balanced-affectnet** (`dollyprajapati182/balanced-affectnet`) já extraído na estrutura `{train,val,test}/{violent,non_violent}/*.png`
 
 ## Arquitetura dos Modelos
 
@@ -184,7 +187,7 @@ Modelo baseado em **DeiT-Small** (Data-efficient Image Transformer) para classif
 └─────────┬───────────────┘
           ▼
 ┌─────────────────────────┐
-│   Output: 8 emoções     │ (probabilidades)
+│   Output: 2 emoções   │ (probabilidades)
 └─────────────────────────┘
 ```
 
@@ -243,7 +246,7 @@ Arquitetura multimodal que combina todas as modalidades:
 **Modalidades:**
 - **Vídeo**: Features extraídas do CNN 3D R2Plus1D (512 dims, **padrão**) ou ResNet-LSTM (256 dims) — usadas como *token* de consulta
 - **Pose**: 33 keypoints do MediaPipe (99 dims: x, y, visibility)
-- **Emoção**: embeddings de 128 dims da penúltima camada do EmotionNet (não mais probabilidades de 8 classes)
+- **Emoção**: embeddings de 128 dims da penúltima camada do EmotionNet (classificação binária violent/non_violent)
 
 ## Instalação
 
@@ -535,7 +538,7 @@ Os resultados do CNN 3D são salvos em `results/cnn3d/`.
 
 #### 3.4. Avaliação por Sub-Modelo (F5)
 
-Avalia cada branch do modelo multimodal **independentemente** — `video` (CNN 3D por padrão; use `--video_backbone resnet_lstm` para ResNet-LSTM), `pose` (branch LSTM de pose do multimodal) e `emotion` (EmotionNet, métricas sobre as **8 classes**):
+Avalia cada branch do modelo multimodal **independentemente** — `video` (CNN 3D por padrão; use `--video_backbone resnet_lstm` para ResNet-LSTM), `pose` (branch LSTM de pose do multimodal) e `emotion` (EmotionNet, classificação binária violent/non_violent):
 
 ```bash
 python run_evaluation.py --model video   --model_path models/cnn3d/weights/best_model.pth
@@ -668,11 +671,10 @@ vc-seguranca/
 │   │   └── val/
 │   │       ├── Fight/                  # Vídeos violentos (validação)
 │   │       └── NonFight/               # Vídeos não violentos (validação)
-│   └── balanced-affectnet/            # Dataset de emoções (8 classes)
+│   └── balanced-affectnet/            # Dataset de emoções (2 classes)
 │       ├── train/
-│       │   ├── Anger/
-│       │   ├── Happy/
-│       │   └── ... (8 classes)
+│       │   ├── violent/
+│       │   └── non_violent/
 │       ├── val/
 │       └── test/
 │
@@ -747,7 +749,7 @@ vc-seguranca/
 vc-seguranca/
 ├── dataset/                    # Datasets (não versionados)
 │   ├── RWF-2000/              # Dataset principal (violência CCTV)
-│   └── balanced-affectnet/    # Dataset de emoções (8 classes)
+│   └── balanced-affectnet/    # Dataset de emoções (2 classes)
 ├── data/                      # Dados processados
 │   ├── raw/                   # Vídeos organizados
 │   ├── processed/             # Frames extraídos

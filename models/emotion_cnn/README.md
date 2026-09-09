@@ -18,9 +18,9 @@ emotion_cnn/
 
 ## Dataset Utilizado
 
-- **Balanced-AffectNet**: Dataset de reconhecimento de emoções faciais (41.008 imagens balanceadas)
-  - Localização: `dataset/balanced-affectnet/` (`train`/`val`/`test` por classe; fallback: `dataset/AffectNet/` legado com `labels.csv`)
-  - Classes: Anger, Disgust, Fear, Happy, Neutral, Sad, Surprise, Contempt
+- **Balanced-AffectNet**: Dataset de reconhecimento de emoções faciais (classificação binária)
+  - Localização: `dataset/balanced-affectnet/` (`train`/`val`/`test` por split; fallback: `dataset/AffectNet/` legado com `labels.csv`)
+  - Classes: Violent, Non-Violent
 
 ## Treinamento
 

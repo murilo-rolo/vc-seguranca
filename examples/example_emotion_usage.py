@@ -39,7 +39,7 @@ def example_basic_usage():
     print(f"Soma das probabilidades (primeiro frame): {emotion_window[0].sum().item():.4f}")
     
     # emotion_window shape: (window_size, num_emotions)
-    # onde num_emotions = 8 (AffectNet)
+    # onde num_emotions = 2 (binary: violent/non_violent)
 
 
 def example_dataloader():

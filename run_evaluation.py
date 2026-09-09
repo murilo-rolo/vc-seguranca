@@ -17,7 +17,7 @@ Uso:
     # Avaliar sub-modelo de pose (branch do multimodal) independentemente
     python run_evaluation.py --model pose --model_path models/multimodal/weights/best_model.pth --metrics
     
-    # Avaliar sub-modelo de emoção (EmotionNet, 8 classes) independentemente
+    # Avaliar sub-modelo de emoção (EmotionNet, classificação binária) independentemente
     python run_evaluation.py --model emotion --model_path models/emotion_cnn/weights/best_model.pth --metrics
     
     # Avaliar TODOS os sub-modelos (video/pose/emotion) + gerar gráficos
@@ -297,9 +297,9 @@ def load_model(
             )
     
     elif model_type == "emotion":
-        # Sub-modelo de emoção: EmotionNet com a cabeça de classificação (8 classes)
+        # Sub-modelo de emoção: EmotionNet com classificação binária
         model = create_emotion_model(
-            num_emotions=8,
+            num_emotions=2,
             pretrained=True,
             checkpoint_path=model_path,
             device=device
@@ -366,7 +366,7 @@ def _get_per_model_test_loader(model_type: str, batch_size: int, video_backbone:
         return test_loader, ["Non-Violent", "Violent"], 2
 
     if model_type == "emotion":
-        # Imagens de face (B, 3, 224, 224) + label das 8 emoções (balanced-affectnet)
+        # Imagens de face (B, 3, 224, 224) + label de 2 classes (balanced-affectnet)
         from train_emotion_model import AffectNetDataset, get_transforms
         from torch.utils.data import DataLoader
 
