@@ -1,40 +1,40 @@
 {
   "method": "input_noise_perturbation",
   "noise_std": {
-    "video": 0.05,
-    "pose": 0.05,
-    "emotion": 0.05
+    "video": 0.1,
+    "pose": 0.1,
+    "emotion": 0.1
   },
   "modalities": {
     "video": {
-      "mean_abs_logit_delta": 0.05684306561946869,
+      "mean_abs_logit_delta": 0.101945461332798,
       "logit_delta_per_class": [
-        0.06245864614844322,
-        0.051227485239505766
+        0.09527058631181717,
+        0.10862034082412719
       ],
       "accuracy_drop": 0.01
     },
     "pose": {
-      "mean_abs_logit_delta": 0.021161626912653445,
+      "mean_abs_logit_delta": 0.000743612153455615,
       "logit_delta_per_class": [
-        0.02422245088964701,
-        0.018100802823901176
+        0.0006001479085534811,
+        0.000887076398357749
       ],
       "accuracy_drop": 0.0
     },
     "emotion": {
-      "mean_abs_logit_delta": 0.019776473753154278,
+      "mean_abs_logit_delta": 0.003067747741006315,
       "logit_delta_per_class": [
-        0.02202407754957676,
-        0.01752887001261115
+        0.0026585621479898692,
+        0.0034769333340227606
       ],
-      "accuracy_drop": -0.005
+      "accuracy_drop": 0.0
     }
   },
   "ranking_by_logit_delta": [
     "video",
-    "pose",
-    "emotion"
+    "emotion",
+    "pose"
   ],
   "ranking_by_accuracy_drop": [
     "video",

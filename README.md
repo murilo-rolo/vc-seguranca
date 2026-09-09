@@ -531,7 +531,7 @@ python run_evaluation.py \
 ```bash
 python run_evaluation.py \
     --model cnn3d \
---model_path models/cnn3d/weights/best_model.pth
+    --model_path models/cnn3d/weights/best_model.pth
 ```
 
 Os resultados do CNN 3D são salvos em `results/cnn3d/`.
