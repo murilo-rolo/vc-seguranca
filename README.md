@@ -802,10 +802,6 @@ vc-seguranca/
 │   └── inference/             # Inferência
 │       ├── realtime_risk_detector.py
 │       └── multi_camera_detector.py
-├── examples/                  # Scripts de exemplo
-│   ├── example_usage.py
-│   ├── example_cnn3d_usage.py
-│   └── ... (outros exemplos)
 ├── results/                   # Resultados de experimentos
 │   ├── experiments/           # Resultados do run_evaluation.py
 │   ├── comparison/            # Comparação baseline vs multimodal
