@@ -598,18 +598,6 @@ Os resultados são salvos em `results/experiments/<experiment_name>/`, incluindo
 - `impact_study/` — `impact_study.json` e `impact_ranking.json` (quando `--impact_study`)
 - `evaluation_summary.json` — resumo geral
 
-### 3.6. Comparação Baseline vs Multimodal
-
-O script `compare_baseline_multimodal.py` avalia ambos os modelos no mesmo conjunto de teste e compara as métricas:
-
-```bash
-python compare_baseline_multimodal.py \
-    --baseline_model_path models/resnet_lstm/weights/best_model.pth \
-    --multimodal_model_path models/multimodal/weights/best_model.pth
-```
-
-O resultado da comparação (incluindo a melhoria de accuracy e F1) é salvo em `results/comparison/comparison.json`.
-
 ### 4. Métricas de Avaliação
 
 O script de avaliação calcula as seguintes métricas:
@@ -807,7 +795,6 @@ vc-seguranca/
 │   ├── comparison/            # Comparação baseline vs multimodal
 │   └── reports/               # Relatórios
 ├── download_datasets.py       # Download dos datasets (Kaggle API)
-├── compare_baseline_multimodal.py  # Comparação baseline vs multimodal
 ├── train_*.py                 # Scripts de treinamento (raiz)
 ├── run_*.py                   # Scripts de execução (raiz)
 ├── requirements.txt           # Dependências
