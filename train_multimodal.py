@@ -175,7 +175,8 @@ def main():
         emotion_data_root=str(p.EMOTION_ROOT), batch_size=args.batch_size,
         num_frames=args.num_frames, window_size=args.window_size,
         video_mode="frames", pose_mode="flatten",
-        num_workers=args.num_workers, dataset_name="rwf2000"
+        num_workers=args.num_workers, dataset_name="rwf2000",
+        index_csv=str(p.PIPELINE_CSV_PATH) if p.PIPELINE_CSV_PATH.exists() else None,
     )
 
     criterion = nn.CrossEntropyLoss()

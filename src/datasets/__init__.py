@@ -8,6 +8,7 @@ from .video3d_dataset import (
     RWF2000Video3DDataset,
     get_rwf2000_3d_dataloaders
 )
+from src.preprocessing import load_index
 
 __all__ = [
     "SurveillanceRiskDataset",
@@ -15,6 +16,7 @@ __all__ = [
     "MultimodalSurveillanceDataset",
     "get_multimodal_dataloaders",
     "RWF2000Video3DDataset",
-    "get_rwf2000_3d_dataloaders"
+    "get_rwf2000_3d_dataloaders",
+    "load_index",
 ]
 

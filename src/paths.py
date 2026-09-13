@@ -33,6 +33,7 @@ COMPARISON_ROOT   = RESULTS_ROOT / "comparison"
 RWF2000_ROOT      = DATASET_ROOT / "RWF-2000"
 AFFECTNET_ROOT    = DATASET_ROOT / "AffectNet"
 BALANCED_AFFECTNET_ROOT = DATASET_ROOT / "balanced-affectnet"
+PIPELINE_CSV_PATH     = DATASET_ROOT / "pipeline_teste.csv"
 
 # ── Novos paths por modelo (estrutura organizada) ──────────────────────────────
 MODELS_BASE       = PROJECT_ROOT / "models"

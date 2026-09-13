@@ -17,6 +17,7 @@ import random
 import numpy as np
 
 from src import paths as p
+from src.preprocessing import load_index
 
 
 class MultimodalSurveillanceDataset(Dataset):
@@ -29,6 +30,9 @@ class MultimodalSurveillanceDataset(Dataset):
     - Emotion: Vetores de emoção (T, num_emotions)
     
     Todas as modalidades devem estar alinhadas temporalmente (mesmo número de frames).
+    
+    Opcionalmente, pode carregar amostras de um CSV gerado por build_dataset_index.py
+    via parâmetro index_csv.
     """
     
     def __init__(
@@ -56,7 +60,10 @@ class MultimodalSurveillanceDataset(Dataset):
         seed: int = 42,
         
         # Dataset
-        dataset_name: str = "rwf2000"
+        dataset_name: str = "rwf2000",
+        
+        # Índice CSV (opcional)
+        index_csv: str = None,
     ):
         """
         Inicializa o dataset multimodal.
@@ -72,11 +79,12 @@ class MultimodalSurveillanceDataset(Dataset):
             pose_mode: "keypoints" (mantém shape 3D) ou "flatten" (achata para 2D)
             transform: Transformações a aplicar
             use_original_split: Se True (padrão), usa divisão original do RWF-2000.
-                               Se False, usa divisão aleatória (DEPRECADO - causa data leakage).
+                                Se False, usa divisão aleatória (DEPRECADO - causa data leakage).
             val_test_split_ratio: Se use_original_split=True, divide o val original em val e test
-                                 usando esta proporção (padrão: 0.5 = 50/50)
+                                  usando esta proporção (padrão: 0.5 = 50/50)
             seed: Seed para reprodutibilidade
             dataset_name: Nome do dataset ("rwf2000")
+            index_csv: Caminho para o CSV de índice (se None, usa estrutura de diretórios)
         """
         if video_data_root is None:
             video_data_root = str(p.PROCESSED_ROOT)
@@ -97,26 +105,97 @@ class MultimodalSurveillanceDataset(Dataset):
         self.use_original_split = use_original_split
         self.val_test_split_ratio = val_test_split_ratio
         self.seed = seed
-        
+        self.index_csv = index_csv
+         
         # Carregar lista de amostras
         self.samples = self._load_samples()
-        
+         
         if len(self.samples) == 0:
             raise ValueError(
                 f"Nenhuma amostra encontrada para o split '{split}' "
                 f"(video: {video_data_root}, pose: {pose_data_root}, emotion: {emotion_data_root})"
             )
-        
+         
         print(f"MultimodalSurveillanceDataset {split}: {len(self.samples)} amostras carregadas")
         print(f"  Video mode: {video_mode}")
         print(f"  Pose mode: {pose_mode}")
         print(f"  Window size: {window_size}")
-    
+        if index_csv:
+            print(f"  Index CSV: {index_csv}")
+     
     def _load_samples(self) -> List[Tuple[str, int]]:
         """
-        Carrega lista de amostras (video_id, label) preservando a divisão original.
+        Carrega lista de amostras (video_id, label).
         
-        Garante que todas as modalidades existem para cada vídeo.
+        Se index_csv for fornecido, carrega do CSV.
+        Caso contrário, usa a estrutura de diretórios.
+        
+        Returns:
+            Lista de tuplas (video_id, label)
+        """
+        if self.index_csv and Path(self.index_csv).exists():
+            return self._load_samples_from_csv()
+        return self._load_samples_from_directories()
+    
+    def _load_samples_from_csv(self) -> List[Tuple[str, int]]:
+        """
+        Carrega amostras do pipeline_teste.csv.
+        
+        Returns:
+            Lista de tuplas (video_id, label)
+        """
+        rows = load_index(self.index_csv)
+        samples = []
+        
+        if self.use_original_split:
+            for row in rows:
+                row_split = row.get("split", "")
+                if self.split == "train":
+                    if row_split != "train":
+                        continue
+                elif self.split in ["val", "test"]:
+                    if row_split != "val":
+                        continue
+                
+                emotion = row.get("emotion", row.get("class", "non_violent"))
+                label = 1 if emotion == "violent" else 0
+                video_id = row.get("video_id", Path(row.get("video", "")).stem)
+                
+                # Verificar se todas as modalidades existem para este vídeo
+                class_dir = "violent" if label == 1 else "non_violent"
+                
+                # Verificar vídeo
+                video_path = self.video_data_root / class_dir / video_id / "frame_sequence.pt"
+                if not video_path.exists():
+                    continue
+                
+                # Verificar emoção
+                emotion_path = self.emotion_data_root / "rwf2000" / row_split / class_dir / f"{video_id}.npy"
+                if not emotion_path.exists():
+                    continue
+                
+                # Verificar pose (opcional)
+                pose_path = self.pose_data_root / "rwf2000" / row_split / class_dir / f"{video_id}.npy"
+                if not pose_path.exists():
+                    continue
+                
+                samples.append((video_id, label))
+            
+            # Dividir val em val/test se necessário
+            if self.split in ["val", "test"] and len(samples) > 0:
+                random.seed(self.seed)
+                random.shuffle(samples)
+                val_end = int(len(samples) * self.val_test_split_ratio)
+                if self.split == "val":
+                    samples = samples[:val_end]
+                else:
+                    samples = samples[val_end:]
+        
+        return samples
+    
+    def _load_samples_from_directories(self) -> List[Tuple[str, int]]:
+        """
+        Carrega amostras da estrutura de diretórios (comportamento original).
         
         Returns:
             Lista de tuplas (video_id, label)
@@ -124,13 +203,9 @@ class MultimodalSurveillanceDataset(Dataset):
         samples = []
         
         if self.dataset_name == "rwf2000":
-            # Estrutura: data/{processed,pose,emotion}/rwf2000/{split}/{violent|non_violent}/
-            
-            # Usar pose como referência (geralmente tem menos vídeos processados)
             pose_base = self.pose_data_root / "rwf2000"
             
             if self.use_original_split:
-                # Preservar divisão original: usar apenas o split solicitado
                 if self.split == "train":
                     original_split = "train"
                 elif self.split in ["val", "test"]:
@@ -142,44 +217,31 @@ class MultimodalSurveillanceDataset(Dataset):
                 if not split_pose_dir.exists():
                     return []
                 
-                # Vídeos violentos (label=1)
                 violent_pose_dir = split_pose_dir / "violent"
                 if violent_pose_dir.exists():
                     for npy_file in violent_pose_dir.glob("*.npy"):
                         video_id = npy_file.stem
-                        
-                        # Verificar se todas as modalidades existem
                         if self._check_all_modalities_exist(video_id, original_split, 1):
                             samples.append((video_id, 1))
                 
-                # Vídeos não violentos (label=0)
                 non_violent_pose_dir = split_pose_dir / "non_violent"
                 if non_violent_pose_dir.exists():
                     for npy_file in non_violent_pose_dir.glob("*.npy"):
                         video_id = npy_file.stem
-                        
                         if self._check_all_modalities_exist(video_id, original_split, 0):
                             samples.append((video_id, 0))
                 
-                # Se solicitamos val ou test, dividir o val original
                 if original_split == "val" and len(samples) > 0:
                     random.seed(self.seed)
                     random.shuffle(samples)
-                    
-                    total_val = len(samples)
-                    val_end = int(total_val * self.val_test_split_ratio)
-                    
+                    val_end = int(len(samples) * self.val_test_split_ratio)
                     if self.split == "val":
                         samples = samples[:val_end]
-                    else:  # test
+                    else:
                         samples = samples[val_end:]
             else:
-                # Modo legado: mistura train e val (DEPRECADO)
                 import warnings
-                warnings.warn(
-                    "⚠️  AVISO: Usando divisão aleatória pode causar DATA LEAKAGE!",
-                    UserWarning
-                )
+                warnings.warn("⚠️  AVISO: Usando divisão aleatória pode causar DATA LEAKAGE!", UserWarning)
                 
                 for split_name in ["train", "val"]:
                     split_pose_dir = pose_base / split_name
@@ -200,10 +262,8 @@ class MultimodalSurveillanceDataset(Dataset):
                             if self._check_all_modalities_exist(video_id, split_name, 0):
                                 samples.append((video_id, 0))
                 
-                # Embaralhar e dividir aleatoriamente (CAUSA DATA LEAKAGE)
                 random.seed(self.seed)
                 random.shuffle(samples)
-                
                 total = len(samples)
                 train_end = int(total * 0.7)
                 val_end = train_end + int(total * 0.15)
@@ -212,7 +272,7 @@ class MultimodalSurveillanceDataset(Dataset):
                     return samples[:train_end]
                 elif self.split == "val":
                     return samples[train_end:val_end]
-                else:  # test
+                else:
                     return samples[val_end:]
         
         return samples
@@ -225,41 +285,39 @@ class MultimodalSurveillanceDataset(Dataset):
     ) -> bool:
         """
         Verifica se todas as modalidades existem para um vídeo.
-        
+
         Args:
             video_id: ID do vídeo
             split_name: Nome do split ("train" ou "val")
             label: Label (0 ou 1)
-        
+
         Returns:
             True se todas as modalidades existem
         """
         class_name = "violent" if label == 1 else "non_violent"
-        
+
         # Verificar pose
         pose_path = self.pose_data_root / "rwf2000" / split_name / class_name / f"{video_id}.npy"
         if not pose_path.exists():
             return False
-        
+
         # Verificar emoção
         emotion_path = self.emotion_data_root / "rwf2000" / split_name / class_name / f"{video_id}.npy"
         if not emotion_path.exists():
             return False
-        
+
         # Verificar vídeo
         if self.video_mode == "frames":
-            # Procurar frame_sequence.pt
             video_path = self.video_data_root / class_name / video_id / "frame_sequence.pt"
             if not video_path.exists():
                 return False
-        else:  # features
-            # Procurar features.pt
+        else:
             video_path = self.video_data_root / class_name / video_id / "features.pt"
             if not video_path.exists():
                 return False
-        
+
         return True
-    
+
     def _load_video_features(
         self,
         video_id: str,
@@ -482,13 +540,18 @@ def get_multimodal_dataloaders(
     use_original_split: bool = True,
     val_test_split_ratio: float = 0.5,
     seed: int = 42,
-    dataset_name: str = "rwf2000"
+    dataset_name: str = "rwf2000",
+    index_csv: str = None,
 ):
     """
     Cria DataLoaders para treino, validação e teste multimodal.
     
     IMPORTANTE: Por padrão, agora usa a divisão original do RWF-2000 (train/val)
     para evitar data leakage. O split 'test' é criado dividindo o split 'val' original.
+    
+    Args:
+        index_csv: Caminho opcional para o CSV de índice (ex: dataset/pipeline_teste.csv).
+                   Se fornecido, o dataset carrega amostras do CSV.
     
     Returns:
         Tupla (train_loader, val_loader, test_loader)
@@ -515,7 +578,8 @@ def get_multimodal_dataloaders(
         use_original_split=use_original_split,
         val_test_split_ratio=val_test_split_ratio,
         seed=seed,
-        dataset_name=dataset_name
+        dataset_name=dataset_name,
+        index_csv=index_csv,
     )
     
     val_dataset = MultimodalSurveillanceDataset(
@@ -531,7 +595,8 @@ def get_multimodal_dataloaders(
         use_original_split=use_original_split,
         val_test_split_ratio=val_test_split_ratio,
         seed=seed,
-        dataset_name=dataset_name
+        dataset_name=dataset_name,
+        index_csv=index_csv,
     )
     
     test_dataset = MultimodalSurveillanceDataset(
@@ -547,7 +612,8 @@ def get_multimodal_dataloaders(
         use_original_split=use_original_split,
         val_test_split_ratio=val_test_split_ratio,
         seed=seed,
-        dataset_name=dataset_name
+        dataset_name=dataset_name,
+        index_csv=index_csv,
     )
     
     # Criar DataLoaders

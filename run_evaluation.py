@@ -741,7 +741,8 @@ def main():
                 num_frames=16,
                 window_size=16,
                 video_mode="frames",
-                pose_mode="keypoints"
+                pose_mode="keypoints",
+                index_csv=str(p.PIPELINE_CSV_PATH) if p.PIPELINE_CSV_PATH.exists() else None,
             )
         elif args.model == "cnn3d":
             # Clipes 3D do RWF-2000 em formato frame-last (B, T, C, H, W);

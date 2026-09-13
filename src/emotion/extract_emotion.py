@@ -16,6 +16,7 @@ Estrutura de dados:
 - Agregação temporal: média ou max pooling dos embeddings por frame
 """
 
+import csv
 import cv2
 import numpy as np
 import torch
@@ -24,6 +25,8 @@ from pathlib import Path
 from typing import Tuple, Optional, List, Dict
 from tqdm import tqdm
 import warnings
+from PIL import Image
+import torchvision.transforms as transforms
 
 # Tentar importar detectores de face
 try:
@@ -641,6 +644,154 @@ def process_videos_for_emotion(
     print(f"  - Sucesso: {success_count}")
     print(f"  - Erros: {error_count}")
     print(f"  - Total: {len(video_files)}")
+
+
+def extract_emotions_from_csv(
+    csv_path: str,
+    output_root: str,
+    model: EmotionNet,
+    face_detector_method: str = "mtcnn",
+    aggregation: str = "mean",
+    face_aggregation: str = "mean",
+    batch_size: int = 32,
+    neutral_val_dir: Optional[str] = None,
+    neutral_cache_path: Optional[str] = None,
+):
+    """
+    Extrai emoções de faces já cropped listadas no pipeline_teste.csv.
+
+    Para cada linha do CSV, carrega a imagem (face já cropped),
+    extrai o embedding com EmotionNet e salva como .npy.
+
+    Args:
+        csv_path: Caminho para pipeline_teste.csv
+        output_root: Raiz de saída para os .npy (ex: "data/emotion")
+        model: Modelo EmotionNet pré-treinado
+        face_detector_method: Método de detecção (não usado para crops, mas mantido para compatibilidade)
+        aggregation: Método de agregação temporal
+        face_aggregation: Agregação das faces por frame
+        batch_size: Tamanho do batch para extração
+        neutral_val_dir: Diretório de embeddings neutros
+        neutral_cache_path: Caminho do cache do embedding neutro
+
+    Estrutura de saída:
+        output_root/rwf2000/{split}/{class}/{video_id}.npy
+    """
+    from PIL import Image
+    import torchvision.transforms as transforms
+
+    output_path = Path(output_root)
+    csv_file = Path(csv_path)
+
+    if not csv_file.exists():
+        print(f"Erro: CSV não encontrado: {csv_file}")
+        return
+
+    device = next(model.parameters()).device
+    neutral_embedding = compute_neutral_embedding(
+        model=model,
+        val_dir=neutral_val_dir,
+        cache_path=neutral_cache_path,
+        device=str(device),
+    )
+
+    transform = transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+    ])
+
+    rows = load_index(str(csv_path)) if False else _load_csv_rows(str(csv_path))
+
+    if not rows:
+        print("Nenhuma linha encontrada no CSV.")
+        return
+
+    print(f"Extraindo emoções de {len(rows)} faces do CSV...")
+
+    face_tensors: List[torch.Tensor] = []
+    face_meta: List[Dict] = []
+
+    for row in tqdm(rows, desc="Processando faces"):
+        image_path = Path(row["image_path"])
+        if not image_path.exists():
+            print(f"  ⚠️ Imagem não encontrada: {image_path}")
+            continue
+
+        video_id = row.get("video_id", Path(row["video"]).stem)
+        split = row.get("split", "train")
+        class_name = row.get("class", row.get("emotion", "non_violent"))
+
+        try:
+            img = Image.open(image_path).convert("RGB")
+            img_tensor = transform(img).unsqueeze(0).to(device)
+        except Exception as e:
+            print(f"  ⚠️ Erro ao carregar imagem {image_path}: {e}")
+            continue
+
+        face_tensors.append(img_tensor)
+        face_meta.append({
+            "video_id": video_id,
+            "split": split,
+            "class": class_name,
+            "image_path": str(image_path),
+        })
+
+        if len(face_tensors) >= batch_size:
+            _process_face_batch(
+                face_tensors, face_meta, model, neutral_embedding,
+                output_path, aggregation, face_aggregation, device, batch_size
+            )
+            face_tensors = []
+            face_meta = []
+
+    if face_tensors:
+        _process_face_batch(
+            face_tensors, face_meta, model, neutral_embedding,
+            output_path, aggregation, face_aggregation, device, batch_size
+        )
+
+    print("\nExtração de emoções do CSV concluída!")
+
+
+def _load_csv_rows(csv_path: str) -> List[Dict]:
+    """Carrega linhas do CSV como lista de dicionários."""
+    rows = []
+    with open(csv_path, "r") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            rows.append(dict(row))
+    return rows
+
+
+def _process_face_batch(
+    face_tensors: List[torch.Tensor],
+    face_meta: List[Dict],
+    model: EmotionNet,
+    neutral_embedding: np.ndarray,
+    output_path: Path,
+    aggregation: str,
+    face_aggregation: str,
+    device: str,
+    batch_size: int,
+):
+    """Processa um batch de faces e salva os .npy."""
+    batch_tensor = torch.cat(face_tensors, dim=0).to(device)
+
+    with torch.no_grad():
+        embeddings = model.extract_features(batch_tensor)
+        embeddings = embeddings.cpu().numpy()
+
+    for i, emb in enumerate(embeddings):
+        meta = face_meta[i]
+        video_id = meta["video_id"]
+        split = meta["split"]
+        class_name = meta["class"]
+
+        out_dir = output_path / "rwf2000" / split / class_name
+        out_dir.mkdir(parents=True, exist_ok=True)
+        npy_path = out_dir / f"{video_id}.npy"
+        np.save(npy_path, emb)
 
 
 def process_dataset_for_emotion(
