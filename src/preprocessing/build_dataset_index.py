@@ -37,7 +37,13 @@ def find_class_videos(
     class_dir = base_dir / split / class_name
     if not class_dir.exists():
         return []
-    return sorted(class_dir.glob("*.pt"))
+    pt_files = []
+    for subdir in class_dir.iterdir():
+        if subdir.is_dir():
+            pt = subdir / "frame_sequence.pt"
+            if pt.exists():
+                pt_files.append(pt)
+    return sorted(pt_files)
 
 
 def get_split_dirs(split: str) -> List[str]:
@@ -186,7 +192,7 @@ def build_index(
             video_files = find_class_videos(processed_root, current_split, class_name)
 
             for video_path in video_files:
-                video_id = video_path.stem
+                video_id = video_path.parent.name
                 class_dir_name = class_name
 
                 emotion_file = None
@@ -216,11 +222,6 @@ def build_index(
                         )
                         if pose_path.exists():
                             pose_file = str(pose_path)
-
-                if include_emotion and not emotion_file:
-                    continue
-                if include_pose and not pose_file:
-                    continue
 
                 if min_frames > 0:
                     try:
