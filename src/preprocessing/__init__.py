@@ -15,4 +15,3 @@ __all__ = [
     "save_json",
     "load_index",
 ]
-

@@ -302,22 +302,23 @@ Arquitetura multimodal que combina todas as modalidades:
 
 ### 1. Pré-processamento
 
-Todo o pré-processamento é feito por **um único script** (`run_preprocessing.py`) com subcomandos:
+O pré-processamento é dividido em scripts independentes, cada um executável separadamente:
 
-| Subcomando | Descrição |
+| Arquivo | Descrição |
 |---|---|
-| `organize` | Organiza os vídeos do RWF-2000 em `data/raw` |
-| `frames` | Extrai N frames por vídeo, redimensiona e normaliza em `data/processed` |
-| `pose` | Extrai keypoints de pose (YOLO26) em `data/pose` |
-| `emotion` | Extrai vetores de emoção (EmotionNet) em `data/emotion` |
-| `all` | Executa todas as etapas em sequência |
+| `src/preprocessing/organize.py` | Organiza os vídeos do RWF-2000 em `data/raw` |
+| `src/preprocessing/frames.py` | Extrai N frames por vídeo, redimensiona e normaliza em `data/processed` |
+| `src/preprocessing/pose.py` | Extrai keypoints de pose (YOLO26) em `data/pose` |
+| `src/preprocessing/emotion.py` | Extrai vetores de emoção (EmotionNet) em `data/emotion` |
+| `src/preprocessing/index.py` | Gera índice unificado CSV linkando vídeos com emoções e pose |
+| `src/preprocessing/pipeline.py` | Executa todas as etapas em sequência |
 
-#### Passo 1: Organizar vídeos
+#### Organizar vídeos
 
 Organiza os vídeos do dataset RWF-2000:
 
 ```bash
-python run_preprocessing.py organize
+python src/preprocessing/organize.py
 ```
 
 Ou manualmente:
@@ -325,14 +326,12 @@ Ou manualmente:
 python -m src.preprocessing.organize_videos
 ```
 
-#### Passo 2: Extrair frames de vídeo
+#### Extrair frames de vídeo
 
 Extrai N frames por vídeo, redimensiona e normaliza:
 
 ```bash
-python run_preprocessing.py frames --num_frames 16
-# ou
-python -m src.preprocessing.extract_frames
+python src/preprocessing/frames.py --num_frames 16
 ```
 
 **Opções:**
@@ -341,12 +340,12 @@ python -m src.preprocessing.extract_frames
 - `--normalize` / `--no-normalize`: Normaliza pixels para [0, 1] (padrão: ligado)
 - `--workers`: Workers paralelos para extração
 
-#### Passo 3: Extrair keypoints de pose
+#### Extrair keypoints de pose
 
 Extrai keypoints de pose usando YOLO26:
 
 ```bash
-python run_preprocessing.py pose --num_frames 16
+python src/preprocessing/pose.py --num_frames 16
 ```
 
 **Opções:**
@@ -355,16 +354,16 @@ python run_preprocessing.py pose --num_frames 16
 - `--iou`: IoU mínima para NMS (padrão 0.7)
 - `--model_complexity`: `0` (nano), `1` (small, padrão) ou `2` (medium)
 
-#### Passo 4: Extrair emoções faciais
+#### Extrair emoções faciais
 
-Extrai vetores de emoção usando EmotionNet (DeiT-Small). Cada vídeo gera uma sequência de embeddings de 128 dims (saída da penúltima camada, não probabilidades de classes), salvos como `emotions/emotions.npy` (formato `T × 128`):
+Extrai vetores de emoção usando EmotionNet (DeiT-Small). Cada vídeo gera uma sequência de embeddings de 128 dims (saída da penúltima camada, não probabilidades de classes), salvos como `emotion/rwf2000/{split}/{class}/{video_id}.npy`:
 
 ```bash
 # Primeiro, treine o modelo de emoção (se ainda não tiver)
 python train_emotion_model.py --epochs 60
 
 # Depois, extraia emoções do RWF-2000
-python run_preprocessing.py emotion
+python src/preprocessing/emotion.py
 ```
 
 O modelo é carregado automaticamente de `models/emotion_cnn/weights/best_model.pth`.
@@ -383,7 +382,7 @@ Se não houver rostos detectados em um vídeo, é usado o embedding neutro (128 
 Executa todas as etapas em sequência (organize → frames → pose → emotion):
 
 ```bash
-python run_preprocessing.py all --num_frames 16
+python src/preprocessing/pipeline.py --num_frames 16
 ```
 
 **Configuração customizada:**
@@ -759,14 +758,25 @@ vc-seguranca/
 ├── src/
 │   ├── paths.py                # Gerenciamento centralizado de caminhos
 │   ├── preprocessing/          # Pré-processamento
-│   │   ├── organize_videos.py
-│   │   └── extract_frames.py
+│   │   ├── __init__.py
+│   │   ├── _common.py
+│   │   ├── organize.py          # Script standalone: organiza vídeos RWF-2000
+│   │   ├── organize_videos.py   # Módulo com a função organize_rwf2000_dataset
+│   │   ├── frames.py            # Script standalone: extração de frames
+│   │   ├── extract_frames.py    # Módulo com preprocess_dataset, extract_frames_from_video
+│   │   ├── pose.py              # Script standalone: extração de pose (YOLO26)
+│   │   ├── index.py             # Script standalone: geração de índice CSV/JSON
+│   │   ├── build_dataset_index.py # Módulo com build_index, save_csv, etc.
+│   │   ├── emotion.py           # Script standalone: extração de emoções
+│   │   ├── pipeline.py          # Script standalone: pipeline completo
+│   │   └── ...
 │   ├── pose/                  # Extração de pose
 │   │   ├── extract_pose.py
 │   │   └── pose_dataset.py
 │   ├── emotion/               # Extração de emoção
 │   │   ├── extract_emotion.py
-│   │   └── emotion_dataset.py
+│   │   ├── emotion_dataset.py
+│   │   └── neutral_embedding.py
 │   ├── datasets/              # Datasets e DataLoaders
 │   │   ├── surveillance_dataset.py
 │   │   ├── multimodal_dataset.py
@@ -910,18 +920,23 @@ python train_pipeline.py --all --affectnet_path /caminho/balanced-affectnet
 Se preferir executar manualmente:
 
 1. **Pré-processamento de Dados**
-   ```bash
-   # 1. Organizar vídeos e extrair frames
-   python run_preprocessing.py organize
-   python run_preprocessing.py frames --num_frames 16
-   
-   # 2. Extrair pose
-   python run_preprocessing.py pose --num_frames 16
-   
-   # 3. Treinar EmotionNet e extrair emoções
-   python train_emotion_model.py
-   python run_preprocessing.py emotion
-   ```
+    ```bash
+    # 1. Organizar vídeos
+    python src/preprocessing/organize.py
+    
+    # 2. Extrair frames
+    python src/preprocessing/frames.py --num_frames 16
+    
+    # 3. Extrair pose
+    python src/preprocessing/pose.py --num_frames 16
+    
+    # 4. Treinar EmotionNet e extrair emoções
+    python train_emotion_model.py
+    python src/preprocessing/emotion.py
+    
+    # Ou executar tudo de uma vez:
+    python src/preprocessing/pipeline.py --num_frames 16
+    ```
 
 2. **Treinamento de Modelos Base**
    ```bash
