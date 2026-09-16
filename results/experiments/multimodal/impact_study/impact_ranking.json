@@ -1,9 +1,9 @@
 {
   "method": "input_noise_perturbation",
   "noise_std": {
-    "video": 0.05,
-    "pose": 0.05,
-    "emotion": 0.05
+    "video": 2.0,
+    "pose": 2.0,
+    "emotion": 2.0
   },
   "ranking_by_logit_delta": [
     "emotion",

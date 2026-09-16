@@ -1,34 +1,34 @@
 {
   "method": "input_noise_perturbation",
   "noise_std": {
-    "video": 0.05,
-    "pose": 0.05,
-    "emotion": 0.05
+    "video": 2.0,
+    "pose": 2.0,
+    "emotion": 2.0
   },
   "modalities": {
     "video": {
-      "mean_abs_logit_delta": 0.01299487667158246,
+      "mean_abs_logit_delta": 0.5901688206195831,
       "logit_delta_per_class": [
-        0.011966480687260628,
-        0.014023272823542356
-      ],
-      "accuracy_drop": 0.0
-    },
-    "pose": {
-      "mean_abs_logit_delta": 0.0007160308526363224,
-      "logit_delta_per_class": [
-        0.0007057506567798555,
-        0.0007263110484927893
-      ],
-      "accuracy_drop": 0.0
-    },
-    "emotion": {
-      "mean_abs_logit_delta": 0.018149663116782903,
-      "logit_delta_per_class": [
-        0.01872822768986225,
-        0.01757109820842743
+        0.5805586385726929,
+        0.5997789835929871
       ],
       "accuracy_drop": 0.005
+    },
+    "pose": {
+      "mean_abs_logit_delta": 0.05832725942134857,
+      "logit_delta_per_class": [
+        0.05676917411386967,
+        0.05988534308969975
+      ],
+      "accuracy_drop": 0.005
+    },
+    "emotion": {
+      "mean_abs_logit_delta": 1.7832821643352508,
+      "logit_delta_per_class": [
+        1.84673473238945,
+        1.7198296070098877
+      ],
+      "accuracy_drop": 0.08
     }
   },
   "ranking_by_logit_delta": [

@@ -21,13 +21,13 @@ Uso:
     python run_evaluation.py --model emotion --model_path models/emotion_cnn/weights/best_model.pth --metrics
     
     # Avaliar TODOS os sub-modelos (video/pose/emotion) + gerar gráficos
-    python run_evaluation.py --model multimodal --model_path results/multimodal/best_model.pth --all --charts
+    python run_evaluation.py --model multimodal --model_path models/multimodal/weights/best_model.pth --all --charts
     
     # Estudo de impacto no modelo fusionado
-    python run_evaluation.py --model multimodal --model_path results/multimodal/best_model.pth --impact_study --noise_std 0.05
+    python run_evaluation.py --model multimodal --model_path models/multimodal/weights/best_model.pth --impact_study --noise_std 0.05
     
     # Executar todos os experimentos
-    python run_evaluation.py --model multimodal --model_path results/multimodal/best_model.pth --all
+    python run_evaluation.py --model multimodal --model_path models/multimodal/weights/best_model.pth --all
 """
 
 import argparse
