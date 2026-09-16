@@ -38,10 +38,10 @@ def cmd_frames(args):
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="src/preprocessing/frames.py",
+        prog="src.preprocessing.frames",
         description="Extrai N frames por vídeo, redimensiona e normaliza para data/processed.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="Exemplo:\n  python src/preprocessing/frames.py --num_frames 16"
+        epilog="Exemplo:\n  python -m src.preprocessing.frames --num_frames 16"
     )
     parser.add_argument(
         "--num_frames", type=int, default=16,
@@ -67,7 +67,3 @@ def main():
     parser = build_parser()
     args = parser.parse_args()
     cmd_frames(args)
-
-
-if __name__ == "__main__":
-    main()

@@ -23,7 +23,7 @@ def cmd_organize(args):
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="src/preprocessing/organize.py",
+        prog="src.preprocessing.organize",
         description="Organiza os vídeos do dataset RWF-2000 nas pastas violent/non_violent.",
     )
     return parser
@@ -33,7 +33,3 @@ def main():
     parser = build_parser()
     args = parser.parse_args()
     cmd_organize(args)
-
-
-if __name__ == "__main__":
-    main()

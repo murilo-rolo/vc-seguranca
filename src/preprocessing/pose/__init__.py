@@ -58,10 +58,10 @@ def cmd_pose(args):
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="src/preprocessing/pose.py",
+        prog="src.preprocessing.pose",
         description="Extrai keypoints de pose de vídeos do dataset RWF-2000.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="Exemplo:\n  python src/preprocessing/pose.py --num_frames 16"
+        epilog="Exemplo:\n  python -m src.preprocessing.pose --num_frames 16"
     )
     parser.add_argument(
         "--num_frames", type=int, default=None,
@@ -86,7 +86,3 @@ def main():
     parser = build_parser()
     args = parser.parse_args()
     cmd_pose(args)
-
-
-if __name__ == "__main__":
-    main()

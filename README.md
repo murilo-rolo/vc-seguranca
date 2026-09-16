@@ -306,19 +306,19 @@ O pré-processamento é dividido em scripts independentes, cada um executável s
 
 | Arquivo | Descrição |
 |---|---|
-| `src/preprocessing/organize.py` | Organiza os vídeos do RWF-2000 em `data/raw` |
-| `src/preprocessing/frames.py` | Extrai N frames por vídeo, redimensiona e normaliza em `data/processed` |
-| `src/preprocessing/pose.py` | Extrai keypoints de pose (YOLO26) em `data/pose` |
-| `src/preprocessing/emotion.py` | Extrai vetores de emoção (EmotionNet) em `data/emotion` |
-| `src/preprocessing/index.py` | Gera índice unificado CSV linkando vídeos com emoções e pose |
-| `src/preprocessing/pipeline.py` | Executa todas as etapas em sequência |
+| `src/preprocessing/organize/` | Organiza os vídeos do RWF-2000 em `data/raw` |
+| `src/preprocessing/frames/` | Extrai N frames por vídeo, redimensiona e normaliza em `data/processed` |
+| `src/preprocessing/pose/` | Extrai keypoints de pose (YOLO26) em `data/pose` |
+| `src/preprocessing/emotion/` | Extrai vetores de emoção (EmotionNet) em `data/emotion` |
+| `src/preprocessing/index/` | Gera índice unificado CSV linkando vídeos com emoções e pose |
+| `src/preprocessing/pipeline/` | Executa todas as etapas em sequência |
 
 #### Organizar vídeos
 
 Organiza os vídeos do dataset RWF-2000:
 
 ```bash
-python src/preprocessing/organize.py
+python -m src.preprocessing.organize
 ```
 
 Ou manualmente:
@@ -331,7 +331,7 @@ python -m src.preprocessing.organize_videos
 Extrai N frames por vídeo, redimensiona e normaliza:
 
 ```bash
-python src/preprocessing/frames.py --num_frames 16
+python -m src.preprocessing.frames --num_frames 16
 ```
 
 **Opções:**
@@ -345,7 +345,7 @@ python src/preprocessing/frames.py --num_frames 16
 Extrai keypoints de pose usando YOLO26:
 
 ```bash
-python src/preprocessing/pose.py --num_frames 16
+python -m src.preprocessing.pose --num_frames 16
 ```
 
 **Opções:**
@@ -363,7 +363,7 @@ Extrai vetores de emoção usando EmotionNet (DeiT-Small). Cada vídeo gera uma 
 python train_emotion_model.py --epochs 60
 
 # Depois, extraia emoções do RWF-2000
-python src/preprocessing/emotion.py
+python -m src.preprocessing.emotion
 ```
 
 O modelo é carregado automaticamente de `models/emotion_cnn/weights/best_model.pth`.
@@ -382,7 +382,7 @@ Se não houver rostos detectados em um vídeo, é usado o embedding neutro (128 
 Executa todas as etapas em sequência (organize → frames → pose → emotion):
 
 ```bash
-python src/preprocessing/pipeline.py --num_frames 16
+python -m src.preprocessing.pipeline --num_frames 16
 ```
 
 **Configuração customizada:**
@@ -760,15 +760,27 @@ vc-seguranca/
 │   ├── preprocessing/          # Pré-processamento
 │   │   ├── __init__.py
 │   │   ├── _common.py
-│   │   ├── organize.py          # Script standalone: organiza vídeos RWF-2000
+│   │   ├── organize/            # Script standalone: organiza vídeos RWF-2000
+│   │   │   ├── __init__.py
+│   │   │   └── __main__.py
 │   │   ├── organize_videos.py   # Módulo com a função organize_rwf2000_dataset
-│   │   ├── frames.py            # Script standalone: extração de frames
+│   │   ├── frames/              # Script standalone: extração de frames
+│   │   │   ├── __init__.py
+│   │   │   └── __main__.py
 │   │   ├── extract_frames.py    # Módulo com preprocess_dataset, extract_frames_from_video
-│   │   ├── pose.py              # Script standalone: extração de pose (YOLO26)
-│   │   ├── index.py             # Script standalone: geração de índice CSV/JSON
+│   │   ├── pose/                # Script standalone: extração de pose (YOLO26)
+│   │   │   ├── __init__.py
+│   │   │   └── __main__.py
+│   │   ├── index/               # Script standalone: geração de índice CSV/JSON
+│   │   │   ├── __init__.py
+│   │   │   └── __main__.py
 │   │   ├── build_dataset_index.py # Módulo com build_index, save_csv, etc.
-│   │   ├── emotion.py           # Script standalone: extração de emoções
-│   │   ├── pipeline.py          # Script standalone: pipeline completo
+│   │   ├── emotion/             # Script standalone: extração de emoções
+│   │   │   ├── __init__.py
+│   │   │   └── __main__.py
+│   │   ├── pipeline/            # Script standalone: pipeline completo
+│   │   │   ├── __init__.py
+│   │   │   └── __main__.py
 │   │   └── ...
 │   ├── pose/                  # Extração de pose
 │   │   ├── extract_pose.py
@@ -922,20 +934,20 @@ Se preferir executar manualmente:
 1. **Pré-processamento de Dados**
     ```bash
     # 1. Organizar vídeos
-    python src/preprocessing/organize.py
+    python -m src.preprocessing.organize
     
     # 2. Extrair frames
-    python src/preprocessing/frames.py --num_frames 16
+    python -m src.preprocessing.frames --num_frames 16
     
     # 3. Extrair pose
-    python src/preprocessing/pose.py --num_frames 16
+    python -m src.preprocessing.pose --num_frames 16
     
     # 4. Treinar EmotionNet e extrair emoções
     python train_emotion_model.py
-    python src/preprocessing/emotion.py
+    python -m src.preprocessing.emotion
     
     # Ou executar tudo de uma vez:
-    python src/preprocessing/pipeline.py --num_frames 16
+    python -m src.preprocessing.pipeline --num_frames 16
     ```
 
 2. **Treinamento de Modelos Base**

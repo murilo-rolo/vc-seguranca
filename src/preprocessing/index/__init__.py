@@ -35,10 +35,10 @@ def cmd_index(args):
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="src/preprocessing/index.py",
+        prog="src.preprocessing.index",
         description="Gera índice unificado CSV que linka vídeos com emoções e pose.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="Exemplo:\n  python src/preprocessing/index.py --split all"
+        epilog="Exemplo:\n  python -m src.preprocessing.index --split all"
     )
     parser.add_argument(
         "--split", type=str, choices=["train", "val", "test", "all"], default="all",
@@ -71,7 +71,3 @@ def main():
     parser = build_parser()
     args = parser.parse_args()
     cmd_index(args)
-
-
-if __name__ == "__main__":
-    main()

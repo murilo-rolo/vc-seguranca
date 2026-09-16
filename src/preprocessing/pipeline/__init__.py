@@ -98,10 +98,10 @@ def cmd_all(args):
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="src/preprocessing/pipeline.py",
+        prog="src.preprocessing.pipeline",
         description="Executa todas as etapas do pré-processamento em sequência.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="Exemplo:\n  python src/preprocessing/pipeline.py --num_frames 16"
+        epilog="Exemplo:\n  python -m src.preprocessing.pipeline --num_frames 16"
     )
     parser.add_argument(
         "--num_frames", type=int, default=16,
@@ -155,7 +155,3 @@ def main():
     parser = build_parser()
     args = parser.parse_args()
     cmd_all(args)
-
-
-if __name__ == "__main__":
-    main()

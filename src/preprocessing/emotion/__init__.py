@@ -76,10 +76,10 @@ def cmd_emotion(args):
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="src/preprocessing/emotion.py",
+        prog="src.preprocessing.emotion",
         description="Extrai vetores de emoção de vídeos do dataset RWF-2000.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="Exemplo:\n  python src/preprocessing/emotion.py --num_frames 16"
+        epilog="Exemplo:\n  python -m src.preprocessing.emotion --num_frames 16"
     )
     parser.add_argument(
         "--num_frames", type=int, default=None,
@@ -108,7 +108,3 @@ def main():
     parser = build_parser()
     args = parser.parse_args()
     cmd_emotion(args)
-
-
-if __name__ == "__main__":
-    main()

@@ -1,13 +1,13 @@
 """
 Script de entrada para pré-processamento dos datasets.
 
-Cada etapa pode ser executada individualmente:
-    python src/preprocessing/organize.py
-    python src/preprocessing/frames.py --num_frames 16
-    python src/preprocessing/pose.py --num_frames 16
-    python src/preprocessing/emotion.py
-    python src/preprocessing/index.py --split all
-    python src/preprocessing/pipeline.py --num_frames 16
+Cada etapa pode ser executada individualmente com -m:
+    python -m src.preprocessing.organize
+    python -m src.preprocessing.frames --num_frames 16
+    python -m src.preprocessing.pose --num_frames 16
+    python -m src.preprocessing.emotion
+    python -m src.preprocessing.index --split all
+    python -m src.preprocessing.pipeline --num_frames 16
 """
 
 from src.preprocessing.pipeline import main
