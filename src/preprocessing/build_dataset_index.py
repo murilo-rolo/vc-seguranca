@@ -19,7 +19,7 @@ import json
 import random
 import sys
 from pathlib import Path
-from typing import List, Dict
+from typing import List, Dict, Set
 
 from src import paths as p
 
@@ -191,6 +191,7 @@ def build_index(
     emotion_rng = random.Random(seed)
 
     emotion_pools: Dict[str, List[Path]] = {}
+    used_emotions: Dict[str, Set[str]] = {}
     if include_emotion:
         for s in splits:
             for class_name in LABEL_MAP:
@@ -212,7 +213,14 @@ def build_index(
                 if include_emotion:
                     pool_key = f"{current_split}/{class_name}"
                     pool = emotion_pools.get(pool_key, [])
-                    if pool:
+                    used = used_emotions.get(pool_key, set())
+                    available = [p for p in pool if str(p) not in used]
+
+                    if available:
+                        chosen = emotion_rng.choice(available)
+                        used_emotions.setdefault(pool_key, set()).add(str(chosen))
+                        emotion_file = str(chosen.relative_to(p.PROJECT_ROOT))
+                    elif pool:
                         chosen = emotion_rng.choice(pool)
                         emotion_file = str(chosen.relative_to(p.PROJECT_ROOT))
 
