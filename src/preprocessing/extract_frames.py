@@ -196,7 +196,7 @@ def extract_frames_from_video(
         return _extract_frames_cv2(video_path, num_frames, target_size, normalize)
 
     # (M, H, W, 3) RGB -> (M, 3, H, W)
-    tensor = torch.from_numpy(np.ascontiguousarray(frames)).float()
+    tensor = torch.from_numpy(frames.copy()).float()
     tensor = tensor.permute(0, 3, 1, 2)
 
     if normalize:
