@@ -165,7 +165,7 @@ class MultimodalSurveillanceDataset(Dataset):
                 class_dir = "violent" if label == 1 else "non_violent"
                 
                 # Verificar vídeo
-                video_path = self.video_data_root / class_dir / video_id / "frame_sequence.pt"
+                video_path = self.video_data_root / row_split / class_dir / video_id / "frame_sequence.pt"
                 if not video_path.exists():
                     continue
                 
@@ -308,11 +308,11 @@ class MultimodalSurveillanceDataset(Dataset):
 
         # Verificar vídeo
         if self.video_mode == "frames":
-            video_path = self.video_data_root / class_name / video_id / "frame_sequence.pt"
+            video_path = self.video_data_root / split_name / class_name / video_id / "frame_sequence.pt"
             if not video_path.exists():
                 return False
         else:
-            video_path = self.video_data_root / class_name / video_id / "features.pt"
+            video_path = self.video_data_root / split_name / class_name / video_id / "features.pt"
             if not video_path.exists():
                 return False
 
@@ -321,6 +321,7 @@ class MultimodalSurveillanceDataset(Dataset):
     def _load_video_features(
         self,
         video_id: str,
+        split_name: str,
         label: int
     ) -> torch.Tensor:
         """
@@ -328,6 +329,7 @@ class MultimodalSurveillanceDataset(Dataset):
         
         Args:
             video_id: ID do vídeo
+            split_name: Nome do split ("train" ou "val")
             label: Label (0 ou 1)
         
         Returns:
@@ -337,7 +339,7 @@ class MultimodalSurveillanceDataset(Dataset):
         
         if self.video_mode == "frames":
             # Carregar frames processados
-            video_path = self.video_data_root / class_name / video_id / "frame_sequence.pt"
+            video_path = self.video_data_root / split_name / class_name / video_id / "frame_sequence.pt"
             frames = torch.load(video_path, map_location='cpu')
             
             # frames shape: (num_frames, C, H, W)
@@ -351,7 +353,7 @@ class MultimodalSurveillanceDataset(Dataset):
             return frames
         else:
             # Carregar features pré-extraídas
-            video_path = self.video_data_root / class_name / video_id / "features.pt"
+            video_path = self.video_data_root / split_name / class_name / video_id / "features.pt"
             features = torch.load(video_path, map_location='cpu')
             
             # features shape: (num_frames, D_v) ou (D_v,)
@@ -508,7 +510,7 @@ class MultimodalSurveillanceDataset(Dataset):
             split_name = "val"
         
         # Carregar todas as modalidades
-        video = self._load_video_features(video_id, label)
+        video = self._load_video_features(video_id, split_name, label)
         pose = self._load_pose_features(video_id, split_name, label)
         emotion = self._load_emotion_features(video_id, split_name, label)
         

@@ -44,6 +44,7 @@ except ImportError:
 
 from ..models.emotion_cnn import EmotionNet, create_emotion_model
 from .neutral_embedding import compute_neutral_embedding
+from src import paths as p
 
 
 class FaceDetector:
@@ -713,7 +714,8 @@ def extract_emotions_from_csv(
     face_meta: List[Dict] = []
 
     for row in tqdm(rows, desc="Processando faces"):
-        image_path = Path(row["image_path"])
+        raw_path = row["image_path"]
+        image_path = Path(raw_path) if Path(raw_path).is_absolute() else p.PROJECT_ROOT / raw_path
         if not image_path.exists():
             print(f"  ⚠️ Imagem não encontrada: {image_path}")
             continue

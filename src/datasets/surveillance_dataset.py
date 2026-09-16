@@ -88,21 +88,17 @@ class SurveillanceRiskDataset(Dataset):
             Lista de tuplas (caminho_para_frames, label)
         """
         # Tentar encontrar estrutura que preserve splits originais
-        # Estrutura: data/processed/rwf2000/train|val/violent|non_violent/
-        rwf2000_path = self.processed_data_root / "rwf2000"
-        
-        if rwf2000_path.exists() and self.use_original_split:
-            return self._load_samples_from_rwf2000_structure(rwf2000_path)
-        
-        # Tentar usar diretamente do dataset original RWF-2000
-        # Estrutura: dataset/RWF-2000/train|val/Fight|NonFight/
-        original_dataset_path = p.RWF2000_ROOT
-        if original_dataset_path.exists() and self.use_original_split:
-            # Verificar se temos frames processados no formato original
-            processed_from_original = self.processed_data_root / "rwf2000"
-            if processed_from_original.exists():
-                return self._load_samples_from_rwf2000_structure(processed_from_original)
-        
+        # Estrutura nova: data/processed/train|val/violent|non_violent/
+        if self.use_original_split:
+            test_dir = self.processed_data_root / "train"
+            if test_dir.exists():
+                return self._load_samples_from_rwf2000_structure(self.processed_data_root)
+
+            # Estrutura alternativa: data/processed/rwf2000/train|val/violent|non_violent/
+            rwf2000_path = self.processed_data_root / "rwf2000"
+            if rwf2000_path.exists():
+                return self._load_samples_from_rwf2000_structure(rwf2000_path)
+
         # Fallback: estrutura antiga (DEPRECADO - causa data leakage)
         if not self.use_original_split:
             warnings.warn(

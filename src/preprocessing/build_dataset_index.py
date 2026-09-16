@@ -136,11 +136,11 @@ def generate_csv(
                     continue
 
                 rows.append({
-                    "video": str(video_dir),
+                    "video": str(video_dir.relative_to(p.PROJECT_ROOT)),
                     "emotion": class_name,
                     "split": current_split,
                     "class": class_name,
-                    "image_path": str(img_path),
+                    "image_path": str(img_path.relative_to(p.PROJECT_ROOT)),
                     "video_id": video_id,
                 })
 
@@ -233,9 +233,9 @@ def build_index(
                         continue
 
                 rows.append({
-                    "video_path": str(video_path),
-                    "emotion_path": emotion_file or "",
-                    "pose_path": pose_file or "",
+                    "video_path": str(video_path.relative_to(p.PROJECT_ROOT)),
+                    "emotion_path": str(emotion_path.relative_to(p.PROJECT_ROOT)) if emotion_file else "",
+                    "pose_path": str(pose_path.relative_to(p.PROJECT_ROOT)) if pose_file else "",
                     "label": label,
                     "split": current_split,
                     "class": class_name,

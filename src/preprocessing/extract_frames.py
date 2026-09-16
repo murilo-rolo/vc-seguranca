@@ -356,38 +356,27 @@ def preprocess_dataset(
         processed_data_root = str(p.PROCESSED_ROOT)
     raw_path = Path(raw_data_root)
     processed_path = Path(processed_data_root)
-    
-    # Processar vídeos violentos
-    violent_input = raw_path / "violent"
-    violent_output = processed_path / "violent"
-    
-    if violent_input.exists():
-        process_videos(
-            violent_input,
-            violent_output,
-            num_frames=num_frames,
-            target_size=target_size,
-            normalize=normalize,
-            max_workers=max_workers
-        )
-    else:
-        print(f"Diretório não encontrado: {violent_input}")
-    
-    # Processar vídeos não violentos
-    non_violent_input = raw_path / "non_violent"
-    non_violent_output = processed_path / "non_violent"
-    
-    if non_violent_input.exists():
-        process_videos(
-            non_violent_input,
-            non_violent_output,
-            num_frames=num_frames,
-            target_size=target_size,
-            normalize=normalize,
-            max_workers=max_workers
-        )
-    else:
-        print(f"Diretório não encontrado: {non_violent_input}")
+
+    for split in ["train", "val"]:
+        split_raw = raw_path / split
+        if not split_raw.exists():
+            continue
+
+        for class_name in ["violent", "non_violent"]:
+            class_input = split_raw / class_name
+            class_output = processed_path / split / class_name
+
+            if class_input.exists():
+                process_videos(
+                    class_input,
+                    class_output,
+                    num_frames=num_frames,
+                    target_size=target_size,
+                    normalize=normalize,
+                    max_workers=max_workers
+                )
+            else:
+                print(f"Diretório não encontrado: {class_input}")
     
     print("\nPré-processamento concluído!")
 

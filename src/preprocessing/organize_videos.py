@@ -117,11 +117,6 @@ def organize_rwf2000_dataset(
     dataset_path = Path(dataset_root)
     output_path = Path(output_root)
 
-    violent_dir = output_path / "violent"
-    non_violent_dir = output_path / "non_violent"
-    violent_dir.mkdir(parents=True, exist_ok=True)
-    non_violent_dir.mkdir(parents=True, exist_ok=True)
-
     num_violent, num_non_violent, num_errors = [0], [0], [0]
 
     for split in ["train", "val"]:
@@ -129,6 +124,12 @@ def organize_rwf2000_dataset(
         if not split_path.exists():
             print(f"Aviso: Pasta {split_path} não encontrada. Pulando...")
             continue
+
+        violent_dir = output_path / split / "violent"
+        non_violent_dir = output_path / split / "non_violent"
+        violent_dir.mkdir(parents=True, exist_ok=True)
+        non_violent_dir.mkdir(parents=True, exist_ok=True)
+
         _process_class_videos(split_path, "Fight", violent_dir, num_violent, num_errors)
         _process_class_videos(split_path, "NonFight", non_violent_dir, num_non_violent, num_errors)
 
