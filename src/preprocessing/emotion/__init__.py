@@ -4,7 +4,7 @@ import torch
 from src import paths as p
 from src.preprocessing._common import _check_dataset_root, _print_header, EMOTION_MODEL_PATH
 from src.models.emotion_cnn import create_emotion_model
-from src.emotion.extract_emotion import process_dataset_for_emotion
+from src.emotion.extract_emotion import process_dataset_for_emotion, extract_emotions_from_affectnet
 
 
 def cmd_emotion(args):
@@ -20,6 +20,7 @@ def cmd_emotion(args):
         {
             "Dataset raiz": str(p.DATASET_ROOT),
             "Saída raiz": str(p.EMOTION_ROOT),
+            "Modo": "AffectNet (imagens)" if args.from_affectnet else "RWF-2000 (vídeos)",
             "Número de frames": args.num_frames if args.num_frames else "Todos",
             "Detector de faces": args.face_detector,
             "Agregação temporal": args.aggregation,
@@ -49,24 +50,39 @@ def cmd_emotion(args):
         print(f"Erro ao carregar modelo: {e}")
         return
 
-    rwf2000_path = p.DATASET_ROOT / "RWF-2000"
-    if rwf2000_path.exists():
-        print("\n" + "=" * 60)
-        print("Processando RWF-2000...")
-        print("=" * 60)
-        process_dataset_for_emotion(
-            dataset_root=str(rwf2000_path),
-            output_root=str(p.EMOTION_ROOT),
-            model=model,
-            dataset_name="rwf2000",
-            num_frames=args.num_frames,
-            face_detector_method=args.face_detector,
-            aggregation=args.aggregation,
-            face_aggregation=args.face_aggregation
-        )
+    if args.from_affectnet:
+        affectnet_path = p.BALANCED_AFFECTNET_ROOT
+        if affectnet_path.exists():
+            print("\n" + "=" * 60)
+            print("Processando Balanced-AffectNet (imagens)...")
+            print("=" * 60)
+            extract_emotions_from_affectnet(
+                affectnet_root=str(affectnet_path),
+                output_root=str(p.EMOTION_ROOT),
+                model=model,
+                batch_size=args.batch_size,
+            )
+        else:
+            print(f"\nAviso: AffectNet não encontrado em {affectnet_path}")
     else:
-        print(f"\nAviso: Dataset RWF-2000 não encontrado em {rwf2000_path}")
-        print("  Pulando processamento...")
+        rwf2000_path = p.DATASET_ROOT / "RWF-2000"
+        if rwf2000_path.exists():
+            print("\n" + "=" * 60)
+            print("Processando RWF-2000 (vídeos)...")
+            print("=" * 60)
+            process_dataset_for_emotion(
+                dataset_root=str(rwf2000_path),
+                output_root=str(p.EMOTION_ROOT),
+                model=model,
+                dataset_name="rwf2000",
+                num_frames=args.num_frames,
+                face_detector_method=args.face_detector,
+                aggregation=args.aggregation,
+                face_aggregation=args.face_aggregation
+            )
+        else:
+            print(f"\nAviso: Dataset RWF-2000 não encontrado em {rwf2000_path}")
+            print("  Pulando processamento...")
 
     print("\n" + "=" * 60)
     print("Pré-processamento de emoção concluído!")
@@ -77,9 +93,13 @@ def cmd_emotion(args):
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="src.preprocessing.emotion",
-        description="Extrai vetores de emoção de vídeos do dataset RWF-2000.",
+        description="Extrai vetores de emoção de vídeos ou imagens do dataset.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="Exemplo:\n  python -m src.preprocessing.emotion --num_frames 16"
+        epilog="Exemplo:\n  python -m src.preprocessing.emotion --from-affectnet"
+    )
+    parser.add_argument(
+        "--from-affectnet", action="store_true",
+        help="Extrair emoções das imagens do balanced-affectnet (em vez de vídeos RWF-2000)"
     )
     parser.add_argument(
         "--num_frames", type=int, default=None,
@@ -96,6 +116,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--face_aggregation", type=str, choices=["mean", "max"], default="mean",
         help="Método de agregação das faces por frame (padrão: 'mean')"
+    )
+    parser.add_argument(
+        "--batch_size", type=int, default=32,
+        help="Tamanho do batch para extração (padrão: 32)"
     )
     parser.add_argument(
         "--device", type=str, default=None,

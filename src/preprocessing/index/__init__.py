@@ -15,6 +15,7 @@ def cmd_index(args):
         include_pose=not args.no_pose,
         include_emotion=not args.no_emotion,
         min_frames=args.min_frames,
+        seed=args.seed,
     )
 
     if not rows:
@@ -63,6 +64,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--output-format", type=str, choices=["csv", "json"], default="csv",
         help="Formato de saída (padrão: csv)"
+    )
+    parser.add_argument(
+        "--seed", type=int, default=42,
+        help="Seed para seleção aleatória de emoções (padrão: 42)"
     )
     return parser
 

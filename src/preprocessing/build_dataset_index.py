@@ -179,6 +179,7 @@ def build_index(
     include_pose: bool = True,
     include_emotion: bool = True,
     min_frames: int = 0,
+    seed: int = 42,
 ) -> List[Dict]:
     processed_root = p.PROCESSED_ROOT
     emotion_root = p.EMOTION_ROOT
@@ -186,6 +187,18 @@ def build_index(
 
     rows: List[Dict] = []
     splits = get_split_dirs(split)
+
+    emotion_rng = random.Random(seed)
+
+    emotion_pools: Dict[str, List[Path]] = {}
+    if include_emotion:
+        for s in splits:
+            for class_name in LABEL_MAP:
+                pool_dir = emotion_root / "balanced-affectnet" / s / class_name
+                if pool_dir.exists():
+                    emotion_pools[f"{s}/{class_name}"] = sorted(pool_dir.glob("*.npy"))
+                else:
+                    emotion_pools[f"{s}/{class_name}"] = []
 
     for current_split in splits:
         for class_name, label in LABEL_MAP.items():
@@ -195,19 +208,13 @@ def build_index(
                 video_id = video_path.parent.name
                 class_dir_name = class_name
 
-                emotion_file = None
+                emotion_file = ""
                 if include_emotion:
-                    emotion_path = (
-                        emotion_root / "rwf2000" / current_split / class_dir_name / f"{video_id}.npy"
-                    )
-                    if emotion_path.exists():
-                        emotion_file = str(emotion_path)
-                    elif current_split == "val" and split == "test":
-                        emotion_path = (
-                            emotion_root / "rwf2000" / "val" / class_dir_name / f"{video_id}.npy"
-                        )
-                        if emotion_path.exists():
-                            emotion_file = str(emotion_path)
+                    pool_key = f"{current_split}/{class_name}"
+                    pool = emotion_pools.get(pool_key, [])
+                    if pool:
+                        chosen = emotion_rng.choice(pool)
+                        emotion_file = str(chosen.relative_to(p.PROJECT_ROOT))
 
                 pose_file = None
                 if include_pose:
@@ -234,7 +241,7 @@ def build_index(
 
                 rows.append({
                     "video_path": str(video_path.relative_to(p.PROJECT_ROOT)),
-                    "emotion_path": str(emotion_path.relative_to(p.PROJECT_ROOT)) if emotion_file else "",
+                    "emotion_path": emotion_file,
                     "pose_path": str(pose_path.relative_to(p.PROJECT_ROOT)) if pose_file else "",
                     "label": label,
                     "split": current_split,

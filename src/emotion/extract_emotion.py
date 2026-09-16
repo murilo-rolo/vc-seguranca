@@ -870,3 +870,123 @@ def process_dataset_for_emotion(
     
     print("\nProcessamento do dataset concluído!")
 
+
+def extract_emotions_from_affectnet(
+    affectnet_root: str,
+    output_root: str,
+    model: EmotionNet,
+    batch_size: int = 32,
+):
+    """
+    Extrai embeddings de emoção de todas as imagens do balanced-affectnet.
+
+    Para cada imagem face já cropped, extrai embedding 128-d com EmotionNet
+    e salva como .npy com shape (1, 128).
+
+    Args:
+        affectnet_root: Raiz do balanced-affectnet (ex: "dataset/balanced-affectnet")
+        output_root: Raiz de saída para os .npy (ex: "data/emotion")
+        model: Modelo EmotionNet pré-treinado
+        batch_size: Tamanho do batch para extração
+
+    Estrutura de saída:
+        output_root/balanced-affectnet/{split}/{class}/{image_name}.npy
+    """
+    from PIL import Image
+    import torchvision.transforms as transforms
+
+    affectnet_path = Path(affectnet_root)
+    output_path = Path(output_root)
+
+    if not affectnet_path.exists():
+        print(f"Erro: Diretório não encontrado: {affectnet_path}")
+        return
+
+    device = next(model.parameters()).device
+
+    transform = transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+    ])
+
+    total_processed = 0
+    total_errors = 0
+
+    for split in ["train", "val", "test"]:
+        split_dir = affectnet_path / split
+        if not split_dir.exists():
+            continue
+
+        for class_name in ["violent", "non_violent"]:
+            class_dir = split_dir / class_name
+            if not class_dir.exists():
+                continue
+
+            image_files = sorted(class_dir.glob("*.png"))
+            if not image_files:
+                image_files = sorted(class_dir.glob("*.jpg")) + sorted(class_dir.glob("*.jpeg"))
+            if not image_files:
+                print(f"  Nenhuma imagem encontrada em {class_dir}")
+                continue
+
+            out_dir = output_path / "balanced-affectnet" / split / class_name
+            out_dir.mkdir(parents=True, exist_ok=True)
+
+            print(f"Processando {len(image_files)} imagens de {split}/{class_name}...")
+
+            face_tensors: List[torch.Tensor] = []
+            face_meta: List[Dict] = []
+
+            for img_path in tqdm(image_files, desc=f"  {split}/{class_name}"):
+                try:
+                    img = Image.open(img_path).convert("RGB")
+                    img_tensor = transform(img).unsqueeze(0).to(device)
+                except Exception as e:
+                    print(f"  Erro ao carregar {img_path.name}: {e}")
+                    total_errors += 1
+                    continue
+
+                face_tensors.append(img_tensor)
+                face_meta.append({
+                    "image_name": img_path.stem,
+                })
+
+                if len(face_tensors) >= batch_size:
+                    _process_affectnet_batch(
+                        face_tensors, face_meta, model, out_dir, device
+                    )
+                    total_processed += len(face_tensors)
+                    face_tensors = []
+                    face_meta = []
+
+            if face_tensors:
+                _process_affectnet_batch(
+                    face_tensors, face_meta, model, out_dir, device
+                )
+                total_processed += len(face_tensors)
+
+    print(f"\nExtração de emoções do AffectNet concluída!")
+    print(f"  Processadas: {total_processed}")
+    print(f"  Erros: {total_errors}")
+
+
+def _process_affectnet_batch(
+    face_tensors: List[torch.Tensor],
+    face_meta: List[Dict],
+    model: EmotionNet,
+    out_dir: Path,
+    device: str,
+):
+    """Processa um batch de faces do AffectNet e salva os .npy."""
+    batch_tensor = torch.cat(face_tensors, dim=0).to(device)
+
+    with torch.no_grad():
+        embeddings = model.extract_features(batch_tensor)
+        embeddings = embeddings.cpu().numpy()
+
+    for i, emb in enumerate(embeddings):
+        image_name = face_meta[i]["image_name"]
+        npy_path = out_dir / f"{image_name}.npy"
+        np.save(npy_path, emb.reshape(1, -1))  # (1, 128)
+

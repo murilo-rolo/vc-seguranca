@@ -356,26 +356,72 @@ python -m src.preprocessing.pose --num_frames 16
 
 #### Extrair emoções faciais
 
-Extrai vetores de emoção usando EmotionNet (DeiT-Small). Cada vídeo gera uma sequência de embeddings de 128 dims (saída da penúltima camada, não probabilidades de classes), salvos como `emotion/rwf2000/{split}/{class}/{video_id}.npy`:
+Extrai vetores de emoção usando EmotionNet (DeiT-Small). Há duas formas de extração:
+
+**Opção 1: Extração a partir de imagens do Balanced-AffectNet (recomendado)**
+
+Processa todas as imagens faciais do balanced-affectnet e salva embeddings `(1, 128)` por imagem:
 
 ```bash
-# Primeiro, treine o modelo de emoção (se ainda não tiver)
-python train_emotion_model.py --epochs 60
+python -m src.preprocessing.emotion --from-affectnet
+```
 
-# Depois, extraia emoções do RWF-2000
+**Opção 2: Extração a partir de vídeos do RWF-2000**
+
+Extrai emoções dos vídeos processados do RWF-2000:
+
+```bash
 python -m src.preprocessing.emotion
 ```
 
-O modelo é carregado automaticamente de `models/emotion_cnn/weights/best_model.pth`.
-Se o checkpoint não existir, o script usa pesos ImageNet (modelo não treinado em emoções).
-Se não houver rostos detectados em um vídeo, é usado o embedding neutro (128 dims) em cache em `models/emotion_cnn/weights/neutral_embedding.npy`.
-
 **Opções adicionais:**
+- `--from-affectnet`: Usa imagens do balanced-affectnet (em vez de vídeos RWF-2000)
 - `--face_detector`: `mtcnn` (padrão), `retinaface` ou `haar`
 - `--face_aggregation`: `mean` (padrão) ou `max` — como agregar **todas** as faces detectadas em um frame em um único embedding `(128,)` (cenas de briga/multidão com múltiplas faces)
 - `--aggregation`: `mean` (padrão) ou `max` (agregação temporal ao longo dos frames)
 - `--num_frames`: Número de frames por vídeo (None = todos)
+- `--batch_size`: Tamanho do batch para extração (padrão: 32)
 - `--device`: `cuda` (padrão, se disponível) ou `cpu`
+
+**Estrutura de saída:**
+```
+data/emotion/
+├── balanced-affectnet/           # Emoções extraídas das imagens do AffectNet
+│   ├── train/
+│   │   ├── violent/             # Shape: (1, 128) por imagem
+│   │   └── non_violent/
+│   ├── val/
+│   │   ├── violent/
+│   │   └── non_violent/
+│   └── test/
+│       ├── violent/
+│       └── non_violent/
+└── rwf2000/                     # Emoções extraídas dos vídeos RWF-2000 (legado)
+    ├── train/
+    └── val/
+```
+
+#### Gerar índice CSV
+
+Gera o índice unificado que linka vídeos com emoções. Para cada vídeo, seleciona aleatoriamente um embedding de emoção do balanced-affectnet com o mesmo label:
+
+```bash
+python -m src.preprocessing.index --split all --seed 42
+```
+
+**Opções:**
+- `--split`: `train`, `val`, `test` ou `all` (padrão: all)
+- `--seed`: Seed para seleção aleatória de emoções (padrão: 42)
+- `--output`: Caminho do CSV de saída (padrão: `dataset/pipeline_teste.csv`)
+- `--no-pose`: Não incluir coluna pose_path no CSV
+- `--no-emotion`: Não incluir coluna emotion_path no CSV
+- `--output-format`: `csv` (padrão) ou `json`
+
+**Estrutura do CSV gerado:**
+```csv
+video_path,emotion_path,pose_path,label,split,class,video_id
+dataset/data/processed/train/violent/video_0001/frame_sequence.pt,dataset/data/emotion/balanced-affectnet/train/violent/anger_00004.npy,,1,train,violent,video_0001
+```
 
 #### Pipeline completo
 
@@ -384,6 +430,16 @@ Executa todas as etapas em sequência (organize → frames → pose → emotion)
 ```bash
 python -m src.preprocessing.pipeline --num_frames 16
 ```
+
+**Usando imagens do AffectNet para emoções:**
+
+```bash
+python -m src.preprocessing.pipeline --from-affectnet --num_frames 16
+```
+
+**Opções adicionais do pipeline:**
+- `--from-affectnet`: Usa imagens do balanced-affectnet para emoções (em vez de vídeos RWF-2000)
+- `--batch_size`: Tamanho do batch para extração de emoções (padrão: 32)
 
 **Configuração customizada:**
 
@@ -706,7 +762,17 @@ vc-seguranca/
 │   │   │       └── non_violent/
 │   │
 │   └── emotion/                       # Vetores de emoção (após extract_emotion.py)
-│       └── rwf2000/                   # Emoções do RWF-2000
+│       ├── balanced-affectnet/         # Emoções das imagens do AffectNet
+│       │   ├── train/
+│       │   │   ├── violent/           # Shape: (1, 128) por imagem
+│       │   │   └── non_violent/
+│       │   ├── val/
+│       │   │   ├── violent/
+│       │   │   └── non_violent/
+│       │   └── test/
+│       │       ├── violent/
+│       │       └── non_violent/
+│       └── rwf2000/                   # Emoções dos vídeos RWF-2000 (legado)
 │           ├── train/
 │           │   ├── violent/           # Emoções de vídeos violentos (treino)
 │           │   │   └── <video_id>.npy # Shape: (num_frames, 128)
@@ -736,11 +802,12 @@ vc-seguranca/
 - **Exemplo**: `data/pose/rwf2000/train/violent/video_0001.npy`
 
 **Emoção:**
-- **Estrutura**: `data/emotion/rwf2000/{split}/{violent|non_violent}/<video_id>.npy`
-- **Formato**: Array NumPy com shape `(num_frames, 128)`
-  - Embeddings de 128 dims da penúltima camada do EmotionNet (não probabilidades de classes)
-  - Por frame: agregação de **todas** as faces detectadas (mean/max, `--face_aggregation`); sem faces → embedding neutro
-- **Exemplo**: `data/emotion/rwf2000/train/violent/video_0001.npy`
+- **Estrutura (AffectNet)**: `data/emotion/balanced-affectnet/{split}/{violent|non_violent}/<image_name>.npy`
+- **Formato**: Array NumPy com shape `(1, 128)` — embedding de 128 dims por imagem
+- **Exemplo**: `data/emotion/balanced-affectnet/train/violent/anger_00004.npy`
+- **Estrutura (RWF-2000, legado)**: `data/emotion/rwf2000/{split}/{violent|non_violent}/<video_id>.npy`
+- **Formato**: Array NumPy com shape `(num_frames, 128)` — embedding por frame
+- **Seleção no CSV**: Cada vídeo recebe aleatoriamente um embedding de emoção com o mesmo label (controlado por `--seed`)
 
 ## Estrutura do Projeto
 

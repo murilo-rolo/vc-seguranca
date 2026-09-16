@@ -95,6 +95,7 @@ class MultimodalSurveillanceDataset(Dataset):
         self.video_data_root = Path(video_data_root)
         self.pose_data_root = Path(pose_data_root)
         self.emotion_data_root = Path(emotion_data_root)
+        self.project_root = p.PROJECT_ROOT
         self.split = split
         self.num_frames = num_frames
         self.window_size = window_size
@@ -106,6 +107,7 @@ class MultimodalSurveillanceDataset(Dataset):
         self.val_test_split_ratio = val_test_split_ratio
         self.seed = seed
         self.index_csv = index_csv
+        self.emotion_paths: Dict[str, str] = {}
          
         # Carregar lista de amostras
         self.samples = self._load_samples()
@@ -169,15 +171,26 @@ class MultimodalSurveillanceDataset(Dataset):
                 if not video_path.exists():
                     continue
                 
-                # Verificar emoção
-                emotion_path = self.emotion_data_root / "rwf2000" / row_split / class_dir / f"{video_id}.npy"
-                if not emotion_path.exists():
-                    continue
+                # Verificar emoção (CSV emotion_path ou fallback para rwf2000/balanced-affectnet)
+                csv_emotion_path = row.get("emotion_path", "")
+                if csv_emotion_path:
+                    resolved = (self.project_root / csv_emotion_path).resolve()
+                    if resolved.exists():
+                        self.emotion_paths[video_id] = str(resolved)
+                    else:
+                        continue
+                else:
+                    emotion_path = self.emotion_data_root / "rwf2000" / row_split / class_dir / f"{video_id}.npy"
+                    if not emotion_path.exists():
+                        continue
+                    self.emotion_paths[video_id] = str(emotion_path)
                 
                 # Verificar pose (opcional)
-                pose_path = self.pose_data_root / "rwf2000" / row_split / class_dir / f"{video_id}.npy"
-                if not pose_path.exists():
-                    continue
+                csv_pose_path = row.get("pose_path", "")
+                if csv_pose_path:
+                    resolved_pose = (self.project_root / csv_pose_path).resolve()
+                    if not resolved_pose.exists():
+                        continue
                 
                 samples.append((video_id, label))
             
@@ -304,7 +317,9 @@ class MultimodalSurveillanceDataset(Dataset):
         # Verificar emoção
         emotion_path = self.emotion_data_root / "rwf2000" / split_name / class_name / f"{video_id}.npy"
         if not emotion_path.exists():
-            return False
+            emotion_path = self.emotion_data_root / "balanced-affectnet" / split_name / class_name / f"{video_id}.npy"
+            if not emotion_path.exists():
+                return False
 
         # Verificar vídeo
         if self.video_mode == "frames":
@@ -382,6 +397,9 @@ class MultimodalSurveillanceDataset(Dataset):
         class_name = "violent" if label == 1 else "non_violent"
         pose_path = self.pose_data_root / "rwf2000" / split_name / class_name / f"{video_id}.npy"
         
+        if not pose_path.exists():
+            return torch.zeros(self.num_frames, 133, 3)
+        
         keypoints = np.load(pose_path)
         
         # keypoints shape: (num_frames, num_joints, 3)
@@ -411,13 +429,19 @@ class MultimodalSurveillanceDataset(Dataset):
         Returns:
             Tensor de emoção (T, num_emotions)
         """
-        class_name = "violent" if label == 1 else "non_violent"
-        emotion_path = self.emotion_data_root / "rwf2000" / split_name / class_name / f"{video_id}.npy"
+        if video_id in self.emotion_paths:
+            emotion_path = self.emotion_paths[video_id]
+        else:
+            class_name = "violent" if label == 1 else "non_violent"
+            emotion_path = self.emotion_data_root / "rwf2000" / split_name / class_name / f"{video_id}.npy"
         
         emotions = np.load(emotion_path)
         
-        # emotions shape: (num_frames, num_emotions)
-        # Converter para tensor
+        if emotions.ndim == 1:
+            emotions = emotions.reshape(1, -1)
+        elif emotions.ndim == 2 and emotions.shape[0] == 1:
+            pass
+        
         emotions = torch.from_numpy(emotions).float()
         
         return emotions

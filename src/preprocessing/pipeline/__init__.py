@@ -6,7 +6,7 @@ from src import paths as p
 from src.preprocessing._common import _check_dataset_root, _print_header, EMOTION_MODEL_PATH, _process_rwf2000_pose
 from src.preprocessing import organize_rwf2000_dataset, preprocess_dataset
 from src.models.emotion_cnn import create_emotion_model
-from src.emotion.extract_emotion import process_dataset_for_emotion
+from src.emotion.extract_emotion import process_dataset_for_emotion, extract_emotions_from_affectnet
 
 
 def cmd_all(args):
@@ -75,21 +75,34 @@ def cmd_all(args):
         model = None
 
     if model is not None:
-        rwf2000_path = p.DATASET_ROOT / "RWF-2000"
-        if rwf2000_path.exists():
-            print("\nProcessando RWF-2000...")
-            process_dataset_for_emotion(
-                dataset_root=str(rwf2000_path),
-                output_root=str(p.EMOTION_ROOT),
-                model=model,
-                dataset_name="rwf2000",
-                num_frames=args.num_frames,
-                face_detector_method=args.face_detector,
-                aggregation=args.aggregation,
-                face_aggregation=args.face_aggregation
-            )
+        if args.from_affectnet:
+            affectnet_path = p.BALANCED_AFFECTNET_ROOT
+            if affectnet_path.exists():
+                print("\nProcessando Balanced-AffectNet (imagens)...")
+                extract_emotions_from_affectnet(
+                    affectnet_root=str(affectnet_path),
+                    output_root=str(p.EMOTION_ROOT),
+                    model=model,
+                    batch_size=args.batch_size,
+                )
+            else:
+                print(f"\nAviso: AffectNet não encontrado em {affectnet_path}")
         else:
-            print(f"\nAviso: Dataset RWF-2000 não encontrado em {rwf2000_path}")
+            rwf2000_path = p.DATASET_ROOT / "RWF-2000"
+            if rwf2000_path.exists():
+                print("\nProcessando RWF-2000...")
+                process_dataset_for_emotion(
+                    dataset_root=str(rwf2000_path),
+                    output_root=str(p.EMOTION_ROOT),
+                    model=model,
+                    dataset_name="rwf2000",
+                    num_frames=args.num_frames,
+                    face_detector_method=args.face_detector,
+                    aggregation=args.aggregation,
+                    face_aggregation=args.face_aggregation
+                )
+            else:
+                print(f"\nAviso: Dataset RWF-2000 não encontrado em {rwf2000_path}")
 
     print("\n" + "=" * 60)
     print("PRÉ-PROCESSAMENTO CONCLUÍDO!")
@@ -143,6 +156,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--face_aggregation", type=str, choices=["mean", "max"], default="mean",
         help="Método de agregação das faces por frame (padrão: 'mean')"
+    )
+    parser.add_argument(
+        "--from-affectnet", action="store_true",
+        help="Usar imagens do balanced-affectnet para emoções (em vez de vídeos RWF-2000)"
+    )
+    parser.add_argument(
+        "--batch_size", type=int, default=32,
+        help="Tamanho do batch para extração de emoções (padrão: 32)"
     )
     parser.add_argument(
         "--device", type=str, default=None,
