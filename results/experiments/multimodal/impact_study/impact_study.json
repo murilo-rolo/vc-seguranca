@@ -1,45 +1,45 @@
 {
   "method": "input_noise_perturbation",
   "noise_std": {
-    "video": 0.1,
-    "pose": 0.1,
-    "emotion": 0.1
+    "video": 0.05,
+    "pose": 0.05,
+    "emotion": 0.05
   },
   "modalities": {
     "video": {
-      "mean_abs_logit_delta": 0.101945461332798,
+      "mean_abs_logit_delta": 0.01299487667158246,
       "logit_delta_per_class": [
-        0.09527058631181717,
-        0.10862034082412719
+        0.011966480687260628,
+        0.014023272823542356
       ],
-      "accuracy_drop": 0.01
+      "accuracy_drop": 0.0
     },
     "pose": {
-      "mean_abs_logit_delta": 0.000743612153455615,
+      "mean_abs_logit_delta": 0.0007160308526363224,
       "logit_delta_per_class": [
-        0.0006001479085534811,
-        0.000887076398357749
+        0.0007057506567798555,
+        0.0007263110484927893
       ],
       "accuracy_drop": 0.0
     },
     "emotion": {
-      "mean_abs_logit_delta": 0.003067747741006315,
+      "mean_abs_logit_delta": 0.018149663116782903,
       "logit_delta_per_class": [
-        0.0026585621479898692,
-        0.0034769333340227606
+        0.01872822768986225,
+        0.01757109820842743
       ],
-      "accuracy_drop": 0.0
+      "accuracy_drop": 0.005
     }
   },
   "ranking_by_logit_delta": [
-    "video",
     "emotion",
+    "video",
     "pose"
   ],
   "ranking_by_accuracy_drop": [
+    "emotion",
     "video",
-    "pose",
-    "emotion"
+    "pose"
   ],
   "sanity_zero_noise": null
 }

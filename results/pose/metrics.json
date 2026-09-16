@@ -1,40 +1,40 @@
 {
-  "accuracy": 0.625,
+  "accuracy": 0.39,
   "precision": {
-    "Non-Violent": 0.7619047619047619,
-    "Violent": 0.5886075949367089,
-    "macro": 0.6752561784207354,
-    "weighted": 0.6726567209162145
+    "Non-Violent": 0.40458015267175573,
+    "Violent": 0.36231884057971014,
+    "macro": 0.3834494966257329,
+    "weighted": 0.3828155769443523
   },
   "recall": {
-    "Non-Violent": 0.32989690721649484,
-    "Violent": 0.9029126213592233,
-    "macro": 0.6164047642878591,
-    "weighted": 0.625
+    "Non-Violent": 0.5463917525773195,
+    "Violent": 0.24271844660194175,
+    "macro": 0.39455509958963064,
+    "weighted": 0.39
   },
   "f1_score": {
-    "Non-Violent": 0.460431654676259,
-    "Violent": 0.7126436781609196,
-    "macro": 0.5865376664185893,
-    "weighted": 0.5903208467708592
+    "Non-Violent": 0.4649122807017544,
+    "Violent": 0.29069767441860467,
+    "macro": 0.3778049775601795,
+    "weighted": 0.3751917584659323
   },
-  "specificity": 0.32989690721649484,
+  "specificity": 0.5463917525773195,
   "confusion_matrix": {
-    "true_negative": 32,
-    "false_positive": 65,
-    "false_negative": 10,
-    "true_positive": 93
+    "true_negative": 53,
+    "false_positive": 44,
+    "false_negative": 78,
+    "true_positive": 25
   },
   "confusion_matrix_array": [
     [
-      32,
-      65
+      53,
+      44
     ],
     [
-      10,
-      93
+      78,
+      25
     ]
   ],
-  "auc_roc": 0.5797217495746172,
-  "auc_pr": 0.5482679058458759
+  "auc_roc": 0.32699429486537884,
+  "auc_pr": 0.42539438508474947
 }

@@ -1,31 +1,31 @@
 {
   "summary": {
     "total_samples": 0,
-    "false_positives": 29,
-    "false_negatives": 5,
-    "borderline_cases": 12,
+    "false_positives": 3,
+    "false_negatives": 25,
+    "borderline_cases": 19,
     "error_rates": {
-      "false_positive_rate": 0.145,
-      "false_negative_rate": 0.025,
-      "total_error_rate": 0.17
+      "false_positive_rate": 0.015,
+      "false_negative_rate": 0.125,
+      "total_error_rate": 0.14
     }
   },
   "false_positives": {
-    "total": 29,
-    "avg_probability": 0.740994408212859,
+    "total": 3,
+    "avg_probability": 0.9953620632489523,
     "categories": {
-      "high_confidence": 4,
-      "medium_confidence": 6
+      "high_confidence": 3
     }
   },
   "false_negatives": {
-    "total": 5,
-    "avg_probability": 0.4091135382652283,
+    "total": 25,
+    "avg_probability": 0.38618127167224886,
     "categories": {
-      "low_confidence": 5
+      "low_confidence": 10
     }
   },
   "recommendations": [
-    "High false positive rate. Consider increasing threshold or improving training data."
+    "High false negative rate. Consider decreasing threshold or adding more positive examples.",
+    "False positives have high confidence. Model may be overfitting to certain patterns."
   ]
 }
