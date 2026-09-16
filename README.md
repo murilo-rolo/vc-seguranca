@@ -667,20 +667,32 @@ vc-seguranca/
 │
 ├── data/                              # Dados processados
 │   ├── raw/                           # Vídeos organizados (após organize_videos.py)
-│   │   ├── violent/                   # Todos os vídeos violentos (Fight)
-│   │   │   └── *.avi
-│   │   └── non_violent/               # Todos os vídeos não violentos (NonFight)
-│   │       └── *.avi
+│   │   ├── train/
+│   │   │   ├── violent/               # Vídeos violentos (treino)
+│   │   │   │   └── *.avi
+│   │   │   └── non_violent/           # Vídeos não violentos (treino)
+│   │   │       └── *.avi
+│   │   └── val/
+│   │       ├── violent/               # Vídeos violentos (validação)
+│   │       │   └── *.avi
+│   │       └── non_violent/           # Vídeos não violentos (validação)
+│   │           └── *.avi
 │   │
 │   ├── processed/                     # Frames extraídos (após extract_frames.py)
-│   │   ├── violent/                   # Frames de vídeos violentos
-│   │   │   └── <video_id>/            # Pasta por vídeo
-│   │   │       ├── frame_0000.jpg
-│   │   │       ├── frame_0001.jpg
-│   │   │       └── ... (16 frames)
-│   │   └── non_violent/               # Frames de vídeos não violentos
-│   │       └── <video_id>/
-│   │           └── ...
+│   │   ├── train/
+│   │   │   ├── violent/               # Frames de vídeos violentos (treino)
+│   │   │   │   └── <video_id>/        # Pasta por vídeo
+│   │   │   │       └── frame_sequence.pt  # Tensor (num_frames, 3, 112, 112)
+│   │   │   └── non_violent/           # Frames de vídeos não violentos (treino)
+│   │   │       └── <video_id>/
+│   │   │           └── frame_sequence.pt
+│   │   └── val/
+│   │       ├── violent/               # Frames de vídeos violentos (validação)
+│   │       │   └── <video_id>/
+│   │       │       └── frame_sequence.pt
+│   │       └── non_violent/           # Frames de vídeos não violentos (validação)
+│   │           └── <video_id>/
+│   │               └── frame_sequence.pt
 │   │
 │   ├── pose/                          # Keypoints de pose (após extract_pose.py)
 │   │   ├── rwf2000/                   # Pose do RWF-2000
@@ -709,12 +721,12 @@ vc-seguranca/
 
 **Vídeos:**
 - **Dataset original**: `dataset/RWF-2000/{split}/{Fight|NonFight}/<video_name>.avi`
-- **Após organização**: `data/raw/{violent|non_violent}/<video_name>.avi`
+- **Após organização**: `data/raw/{train,val}/{violent|non_violent}/<video_name>.avi`
 - **ID do vídeo**: Nome do arquivo sem extensão (ex: `video_0001`)
 
 **Frames:**
-- **Estrutura**: `data/processed/{violent|non_violent}/<video_id>/frame_XXXX.jpg`
-- **Formato**: `frame_0000.jpg`, `frame_0001.jpg`, ..., `frame_0015.jpg` (16 frames)
+- **Estrutura**: `data/processed/{train,val}/{violent|non_violent}/<video_id>/frame_sequence.pt`
+- **Formato**: Tensor PyTorch com shape `(num_frames, 3, 112, 112)`
 
 **Pose (Keypoints):**
 - **Estrutura**: `data/pose/rwf2000/{split}/{violent|non_violent}/<video_id>.npy`
@@ -738,8 +750,8 @@ vc-seguranca/
 │   ├── RWF-2000/              # Dataset principal (violência CCTV)
 │   └── balanced-affectnet/    # Dataset de emoções (2 classes)
 ├── data/                      # Dados processados
-│   ├── raw/                   # Vídeos organizados
-│   ├── processed/             # Frames extraídos
+│   ├── raw/                   # Vídeos organizados (por split)
+│   ├── processed/             # Frames extraídos (por split)
 │   ├── pose/                  # Keypoints de pose
 │   └── emotion/               # Vetores de emoção
 ├── models/                    # Modelos treinados (pesos + experimentos)
