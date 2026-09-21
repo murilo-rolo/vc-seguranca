@@ -1,0 +1,143 @@
+{
+  "scenarios": {
+    "baseline (congruente)": {
+      "metrics": {
+        "accuracy": 0.86,
+        "precision": {
+          "Non-Violent": 0.7899159663865546,
+          "Violent": 0.9629629629629629,
+          "macro": 0.8764394646747588,
+          "weighted": 0.8790351696234049
+        },
+        "recall": {
+          "Non-Violent": 0.9690721649484536,
+          "Violent": 0.7572815533980582,
+          "macro": 0.8631768591732559,
+          "weighted": 0.86
+        },
+        "f1_score": {
+          "Non-Violent": 0.8703703703703703,
+          "Violent": 0.8478260869565217,
+          "macro": 0.8590982286634461,
+          "weighted": 0.8587600644122384
+        },
+        "specificity": 0.9690721649484536,
+        "confusion_matrix": {
+          "true_negative": 94,
+          "false_positive": 3,
+          "false_negative": 25,
+          "true_positive": 78
+        },
+        "confusion_matrix_array": [
+          [
+            94,
+            3
+          ],
+          [
+            25,
+            78
+          ]
+        ],
+        "auc_roc": 0.9463517165448905,
+        "auc_pr": 0.9528998576990639
+      },
+      "n_samples": 200,
+      "csv_path": "/home/rolo/vc-seguranca/results/cross_label_impact/pipeline_baseline.csv"
+    },
+    "violent_face + non_violent_video": {
+      "metrics": {
+        "accuracy": 0.145,
+        "precision": {
+          "Non-Violent": 0.013157894736842105,
+          "Violent": 0.22580645161290322,
+          "macro": 0.11948217317487267,
+          "weighted": 0.12267190152801359
+        },
+        "recall": {
+          "Non-Violent": 0.010309278350515464,
+          "Violent": 0.27184466019417475,
+          "macro": 0.14107696927234512,
+          "weighted": 0.145
+        },
+        "f1_score": {
+          "Non-Violent": 0.011560693641618497,
+          "Violent": 0.24669603524229075,
+          "macro": 0.12912836444195464,
+          "weighted": 0.1326553945659647
+        },
+        "specificity": 0.010309278350515464,
+        "confusion_matrix": {
+          "true_negative": 1,
+          "false_positive": 96,
+          "false_negative": 75,
+          "true_positive": 28
+        },
+        "confusion_matrix_array": [
+          [
+            1,
+            96
+          ],
+          [
+            75,
+            28
+          ]
+        ],
+        "auc_roc": 0.13832449204283856,
+        "auc_pr": 0.3657668305254685
+      },
+      "n_samples": 200,
+      "csv_path": "/home/rolo/vc-seguranca/results/cross_label_impact/pipeline_violent_face.csv"
+    },
+    "non_violent_face + violent_video": {
+      "metrics": {
+        "accuracy": 0.535,
+        "precision": {
+          "Non-Violent": 0.8333333333333334,
+          "Violent": 0.5257731958762887,
+          "macro": 0.679553264604811,
+          "weighted": 0.6749398625429553
+        },
+        "recall": {
+          "Non-Violent": 0.05154639175257732,
+          "Violent": 0.9902912621359223,
+          "macro": 0.5209188269442498,
+          "weighted": 0.535
+        },
+        "f1_score": {
+          "Non-Violent": 0.0970873786407767,
+          "Violent": 0.6868686868686869,
+          "macro": 0.39197803275473175,
+          "weighted": 0.4008247523781504
+        },
+        "specificity": 0.05154639175257732,
+        "confusion_matrix": {
+          "true_negative": 5,
+          "false_positive": 92,
+          "false_negative": 1,
+          "true_positive": 102
+        },
+        "confusion_matrix_array": [
+          [
+            5,
+            92
+          ],
+          [
+            1,
+            102
+          ]
+        ],
+        "auc_roc": 0.5729156240616555,
+        "auc_pr": 0.6003086652985216
+      },
+      "n_samples": 200,
+      "csv_path": "/home/rolo/vc-seguranca/results/cross_label_impact/pipeline_non_violent_face.csv"
+    }
+  },
+  "comparison_text": "------------------------------------------------------------------------------------------\nCen\u00e1rio                               Accuracy   F1 Macro  Precision     Recall    AUC-ROC\n------------------------------------------------------------------------------------------\nbaseline (congruente)                   0.8600     0.8591     0.8764     0.8632     0.9464\nviolent_face + non_violent_video        0.1450     0.1291     0.1195     0.1411     0.1383\nnon_violent_face + violent_video        0.5350     0.3920     0.6796     0.5209     0.5729\n------------------------------------------------------------------------------------------\n\nDeltas vs baseline:\n  violent_face + non_violent_video  \u0394F1=-0.7300  \u0394Acc=-0.7150\n  non_violent_face + violent_video  \u0394F1=-0.4671  \u0394Acc=-0.3250",
+  "confusion_matrix_text": "Matrizes de Confus\u00e3o:\n\n---------------------------------------------------------------\nCen\u00e1rio                                 TN     FP     FN     TP\n---------------------------------------------------------------\nbaseline (congruente)                    0      0      0      0\nviolent_face + non_violent_video         0      0      0      0\nnon_violent_face + violent_video         0      0      0      0\n---------------------------------------------------------------",
+  "config": {
+    "model_path": "models/multimodal/weights/best_model.pth",
+    "seed": 42,
+    "device": "cuda"
+  }
+}
