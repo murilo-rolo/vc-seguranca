@@ -302,6 +302,151 @@ def save_json(rows: List[Dict], output_path: str) -> None:
     print(f"   Total de linhas: {len(rows)}")
 
 
+def build_cross_label_index(
+    scenario: str = "violent_face_non_violent_video",
+    split: str = "all",
+    include_pose: bool = True,
+    min_frames: int = 0,
+    seed: int = 42,
+) -> List[Dict]:
+    """
+    Gera um índice CSV com pareamento cross-label entre emoção facial e vídeo.
+
+    Em vez de parear cada vídeo com uma emoção da mesma classe, troca:
+      - violent_face_non_violent_video: vídeos violent recebem faces non_violent
+      - non_violent_face_violent_video: vídeos non_violent recebem faces violent
+
+    O label do vídeo (coluna 'label') permanece o original (dado do diretório).
+    A coluna 'class' também permanece a classe real do vídeo.
+    Apenas 'emotion_path' é trocado para a classe oposta.
+
+    Args:
+        scenario: "violent_face_non_violent_video" ou "non_violent_face_violent_video"
+        split: "train", "val", "test", ou "all"
+        include_pose: Incluir coluna pose_path
+        min_frames: Mínimo de frames no vídeo para incluir
+        seed: Seed para reprodutibilidade
+
+    Returns:
+        Lista de dicionários com os dados do CSV cross-label.
+    """
+    valid_scenarios = ("violent_face_non_violent_video", "non_violent_face_violent_video")
+    if scenario not in valid_scenarios:
+        raise ValueError(f"scenario deve ser um de {valid_scenarios}, recebeu: {scenario}")
+
+    processed_root = p.PROCESSED_ROOT
+    emotion_root = p.EMOTION_ROOT
+    pose_root = p.POSE_ROOT
+
+    rows: List[Dict] = []
+    splits = get_split_dirs(split)
+
+    emotion_rng = random.Random(seed)
+
+    # Mapeamento de cenário: qual classe de emoção usar para cada classe de vídeo
+    if scenario == "violent_face_non_violent_video":
+        # Vídeo violent -> face non_violent; Vídeo non_violent -> face violent
+        emotion_swap_map = {
+            "violent": "non_violent",
+            "non_violent": "violent",
+        }
+    else:
+        # non_violent_face_violent_video: vídeo violent -> face violent (mantém);
+        #                                  vídeo non_violent -> face violent
+        # Neste cenário, ambos recebem face violent
+        emotion_swap_map = {
+            "violent": "violent",
+            "non_violent": "violent",
+        }
+
+    # Construir pools de emoção para a classe ORIGEM de cada troca
+    emotion_pools: Dict[str, List[Path]] = {}
+    used_emotions: Dict[str, Set[str]] = {}
+    for s in splits:
+        for class_name in LABEL_MAP:
+            pool_dir = emotion_root / "balanced-affectnet" / s / class_name
+            if pool_dir.exists():
+                emotion_pools[f"{s}/{class_name}"] = sorted(pool_dir.glob("*.npy"))
+            else:
+                emotion_pools[f"{s}/{class_name}"] = []
+
+    for current_split in splits:
+        for class_name, label in LABEL_MAP.items():
+            video_files = find_class_videos(processed_root, current_split, class_name)
+
+            for video_path in video_files:
+                video_id = video_path.parent.name
+
+                # Determinar de qual pool de emoção puxar (classe oposta/trocada)
+                emotion_source_class = emotion_swap_map[class_name]
+                pool_key = f"{current_split}/{emotion_source_class}"
+                pool = emotion_pools.get(pool_key, [])
+                used = used_emotions.get(pool_key, set())
+                available = [ep for ep in pool if str(ep) not in used]
+
+                emotion_file = ""
+                if available:
+                    chosen = emotion_rng.choice(available)
+                    used_emotions.setdefault(pool_key, set()).add(str(chosen))
+                    emotion_file = str(chosen.relative_to(p.PROJECT_ROOT))
+                elif pool:
+                    chosen = emotion_rng.choice(pool)
+                    emotion_file = str(chosen.relative_to(p.PROJECT_ROOT))
+
+                pose_file = None
+                if include_pose:
+                    pose_path = (
+                        pose_root / "rwf2000" / current_split / class_name / f"{video_id}.npy"
+                    )
+                    if pose_path.exists():
+                        pose_file = str(pose_path)
+                    elif current_split == "val" and split == "test":
+                        pose_path = (
+                            pose_root / "rwf2000" / "val" / class_name / f"{video_id}.npy"
+                        )
+                        if pose_path.exists():
+                            pose_file = str(pose_path)
+
+                if min_frames > 0:
+                    try:
+                        import torch
+                        frames = torch.load(video_path, map_location="cpu")
+                        if frames.shape[0] < min_frames:
+                            continue
+                    except Exception:
+                        continue
+
+                rows.append({
+                    "video_path": str(video_path.relative_to(p.PROJECT_ROOT)),
+                    "emotion_path": emotion_file,
+                    "pose_path": str(pose_path.relative_to(p.PROJECT_ROOT)) if pose_file else "",
+                    "label": label,
+                    "split": current_split,
+                    "class": class_name,
+                    "video_id": video_id,
+                })
+
+    if split == "test":
+        val_rows = [r for r in rows if r["split"] == "val"]
+        val_rows_sorted = sorted(val_rows, key=lambda x: x["video_id"])
+        val_test_ratio = 0.5
+        val_end = int(len(val_rows_sorted) * (1 - val_test_ratio))
+        test_rows = [{**r, "split": "test"} for r in val_rows_sorted[val_end:]]
+        rows = test_rows
+
+    if rows:
+        violent_count = sum(1 for r in rows if r["label"] == 1)
+        non_violent_count = sum(1 for r in rows if r["label"] == 0)
+        print(f"Cross-label index ({scenario}): {len(rows)} amostras")
+        print(f"  Violent: {violent_count}, Non-violent: {non_violent_count}")
+        splits_found = sorted(set(r["split"] for r in rows))
+        print(f"  Splits: {', '.join(splits_found)}")
+    else:
+        print("Nenhuma amostra encontrada para gerar o índice cross-label.")
+
+    return rows
+
+
 def load_index(csv_path: str) -> List[Dict]:
     rows = []
     with open(csv_path, "r") as f:

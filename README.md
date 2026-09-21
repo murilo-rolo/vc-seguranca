@@ -17,6 +17,7 @@ Sistema avançado de detecção de violência em vídeos de segurança (CCTV) ut
   - [Pré-processamento](#1-pré-processamento)
   - [Treinamento](#2-treinamento)
   - [Avaliação](#3-avaliação)
+  - [Impact Study: Cross-Label Emotion × Video](#36-impact-study-cross-label-emotion--video)
   - [Inferência em Tempo Real](#5-inferência-em-tempo-real)
 - [Pipeline Completo de Execução](#pipeline-completo-de-execução)
 - [Estrutura do Projeto](#estrutura-do-projeto)
@@ -52,6 +53,7 @@ Este projeto está sendo desenvolvido como parte de um projeto de pesquisa em Vi
 - **Otimizado para Recursos Limitados**: Suporta treinamento em CPUs e GPUs, mixed precision (AMP) e gradient clipping
 - **Métricas Detalhadas**: Gera relatórios completos de avaliação
 - **Pipeline de Avaliação Experimental**: Métricas, robustez a distorções, performance (FPS/latência) e análise de limitações
+- **Impact Study Cross-Label**: Gera CSVs com emoção facial trocada (violent face + non_violent video e vice-versa) para medir o impacto da modalidade de emoção na classificação
 - **Treinamento Robusto do EmotionNet**: Focal Loss, WeightedRandomSampler, warmup + cosine annealing, early stopping e resume de treino
 - **Download Automático de Datasets**: `download_datasets.py` baixa RWF-2000 e AffectNet via Kaggle API
 - **Código modular**: Funções de treino/validação centralizadas em `src/training/utils.py`
@@ -312,6 +314,8 @@ O pré-processamento é dividido em scripts independentes, cada um executável s
 | `src/preprocessing/emotion/` | Extrai vetores de emoção (EmotionNet) em `data/emotion` |
 | `src/preprocessing/index/` | Gera índice unificado CSV linkando vídeos com emoções e pose |
 | `src/preprocessing/pipeline/` | Executa todas as etapas em sequência |
+
+> **Nota**: `build_dataset_index.py` também fornece `build_cross_label_index()` para gerar CSVs com emoção facial trocada (usado no impact study cross-label).
 
 #### Organizar vídeos
 
@@ -653,6 +657,73 @@ Os resultados são salvos em `results/experiments/<experiment_name>/`, incluindo
 - `impact_study/` — `impact_study.json` e `impact_ranking.json` (quando `--impact_study`)
 - `evaluation_summary.json` — resumo geral
 
+#### 3.6. Impact Study: Cross-Label Emotion × Video
+
+Estudo de impacto que testa o papel da emoção facial no modelo multimodal trocando os labels entre modalidades. Em vez de parear cada vídeo com uma face do mesmo label (congruente), o estudo cria cenários onde a emoção facial **contradiz** o conteúdo do vídeo:
+
+| Cenário | Vídeo | Face | Hipótese |
+|---------|-------|------|----------|
+| Baseline (congruente) | violent | violent | Referência |
+| | non_violent | non_violent | |
+| violent_face + non_violent_video | **non_violent** | **violent** | Face de raiva/medo contamina vídeo pacífico → mais FPs |
+| non_violent_face + violent_video | **violent** | **non_violent** | Face feliz/calma atenua violência → mais FNs |
+
+**Geração dos CSVs cross-label:**
+
+A função `build_cross_label_index()` em `src/preprocessing/build_dataset_index.py` gera os CSVs trocando o `emotion_path` para a classe oposta, mantendo o `label` e `class` do vídeo original:
+
+```python
+from src.preprocessing.build_dataset_index import build_cross_label_index, save_csv
+
+# Cenário 1: violent face + non_violent video
+rows = build_cross_label_index(
+    scenario="violent_face_non_violent_video",
+    split="all", seed=42,
+)
+save_csv(rows, "dataset/pipeline_cross_label_violent_face.csv")
+
+# Cenário 2: non_violent face + violent video
+rows = build_cross_label_index(
+    scenario="non_violent_face_violent_video",
+    split="all", seed=42,
+)
+save_csv(rows, "dataset/pipeline_cross_label_non_violent_face.csv")
+```
+
+**Avaliação cross-label:**
+
+```bash
+# Avaliação direta (gera CSVs + avalia)
+python run_cross_label_evaluation.py \
+    --model_path models/multimodal/weights/best_model.pth
+
+# Pipeline completo com gráficos
+python run_impact_study.py \
+    --model_path models/multimodal/weights/best_model.pth \
+    --charts
+
+# Usar CSVs já existentes (pular geração)
+python run_impact_study.py --skip_generation --charts
+```
+
+**Opções:**
+- `--model_path`: Checkpoint do modelo multimodal (padrão: `models/multimodal/weights/best_model.pth`)
+- `--batch_size`: Tamanho do batch (padrão: 8)
+- `--seed`: Seed para geração dos CSVs (padrão: 42)
+- `--output_dir`: Diretório de saída (padrão: `results/cross_label_impact/`)
+- `--charts`: Gera gráficos comparativos (barras de métricas, matrizes de confusão, delta de F1)
+- `--skip_generation`: Pula geração de CSVs e usa os existentes no output_dir
+
+**Saída gerada em `results/cross_label_impact/`:**
+- `cross_label_report.json` — Relatório completo com métricas por cenário
+- `metrics_*.json` — Métricas individuais por cenário
+- `pipeline_baseline.csv` — CSV baseline (congruente)
+- `pipeline_violent_face.csv` — CSV violent_face + non_violent_video
+- `pipeline_non_violent_face.csv` — CSV non_violent_face + violent_video
+- `comparison_metrics.png` — Gráfico de barras comparativo (com `--charts`)
+- `confusion_matrices.png` — Matrizes de confusão lado a lado (com `--charts`)
+- `f1_delta.png` — Delta de F1 vs baseline (com `--charts`)
+
 ### 4. Métricas de Avaliação
 
 O script de avaliação calcula as seguintes métricas:
@@ -853,7 +924,7 @@ vc-seguranca/
 │   │   ├── index/               # Script standalone: geração de índice CSV/JSON
 │   │   │   ├── __init__.py
 │   │   │   └── __main__.py
-│   │   ├── build_dataset_index.py # Módulo com build_index, save_csv, etc.
+│   │   ├── build_dataset_index.py # Módulo com build_index, build_cross_label_index, save_csv, etc.
 │   │   ├── emotion/             # Script standalone: extração de emoções
 │   │   │   ├── __init__.py
 │   │   │   └── __main__.py
@@ -898,6 +969,10 @@ vc-seguranca/
 ├── download_datasets.py       # Download dos datasets (Kaggle API)
 ├── train_*.py                 # Scripts de treinamento (raiz)
 ├── run_*.py                   # Scripts de execução (raiz)
+│   ├── run_evaluation.py         # Avaliação completa de modelos
+│   ├── run_cross_label_evaluation.py  # Impact study: avaliação cross-label
+│   ├── run_impact_study.py       # Impact study: orquestrador completo
+│   └── ...
 ├── requirements.txt           # Dependências
 └── README.md                  # Este arquivo
 ```
