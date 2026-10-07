@@ -10,8 +10,11 @@ Cada amostra é um par (vídeo, face) materializado como diretório com symlinks
         emotion.npy  -> data/emotion/balanced-affectnet/<s>/<f_label>/<face_id>.npy
 
 Regras:
-  - Splits train/val/test são frações livres globais (--train/--val/--test),
-    estratificadas por classe, ignorando a partição original do RWF-2000.
+  - Splits seguem a partição ORIGINAL dos dados (sem frações novas):
+      train  ← partição original "train" (RWF-2000 e balanced-affectnet);
+      val/test ← partição original "val" (e "test", se existir) dividida
+      50/50 por classe com seed — mesmo protocolo do pipeline CSV
+      (val_test_split_ratio=0.5, seed=42), que resultava em ~86% de acurácia.
   - train/val contêm apenas pares CONGRUENTES (vídeo e face mesmo rótulo).
   - test contém 4 células de mesmo tamanho (reuso controlado de vídeo):
         violent_violent_face, violent_non_violent_face,
@@ -24,7 +27,7 @@ configuração e contagens (auditoria).
 
 Uso:
     python -m src.preprocessing.build_paired_dataset
-    python -m src.preprocessing.build_paired_dataset --train 0.7 --val 0.15 --test 0.15
+    python -m src.preprocessing.build_paired_dataset --seed 42
     python -m src.preprocessing.build_paired_dataset --validate
     python -m src.preprocessing.build_paired_dataset --force --reuse_faces
 """
@@ -124,28 +127,39 @@ def inventory_faces() -> List[Dict]:
     return faces
 
 
-# ── Split global estratificado ──────────────────────────────────────────────
+# ── Split pela partição original ────────────────────────────────────────────
+
+VAL_TEST_RATIO = 0.5
+
 
 def assign_splits(
     records: List[Dict],
-    fractions: Dict[str, float],
     seed: int,
     key: str = "class",
 ) -> Dict[str, List[Dict]]:
-    """Atribui cada registro a exatamente um split, embaralhando por classe."""
+    """Restaura a partição ORIGINAL dos dados.
+
+    - orig_split == "train" → train (nunca é dividido);
+    - orig_split != "train" (val, test, ...) → pool dividido 50/50 em
+      val/test, por classe, com embaralhamento determinístico por seed.
+
+    É o mesmo protocolo do pipeline CSV original (val_test_split_ratio=0.5),
+    sem misturar a partição train com val/test.
+    """
     result = {"train": [], "val": [], "test": []}
+    remainder: List[Dict] = []
+    for r in records:
+        if r["orig_split"] == "train":
+            result["train"].append(r)
+        else:
+            remainder.append(r)
     for cls in CLASSES:
-        pool = [r for r in records if r[key] == cls]
-        rng = random.Random(f"{seed}:{key}:{cls}")
+        pool = [r for r in remainder if r[key] == cls]
+        rng = random.Random(f"{seed}:orig:{key}:{cls}")
         rng.shuffle(pool)
-        n = len(pool)
-        n_train = int(round(n * fractions["train"]))
-        n_val = int(round(n * fractions["val"]))
-        n_train = min(n_train, n)
-        n_val = min(n_val, n - n_train)
-        result["train"].extend(pool[:n_train])
-        result["val"].extend(pool[n_train:n_train + n_val])
-        result["test"].extend(pool[n_train + n_val:])
+        cut = int(len(pool) * VAL_TEST_RATIO)
+        result["val"].extend(pool[:cut])
+        result["test"].extend(pool[cut:])
     return result
 
 
@@ -256,18 +270,12 @@ def _write_pair(pair_dir: Path, video: Dict, face: Dict) -> Dict[str, bool]:
 
 
 def build(
-    train_frac: float = 0.7,
-    val_frac: float = 0.15,
-    test_frac: float = 0.15,
     seed: int = 42,
     reuse_faces: bool = False,
     output_root: Optional[Path] = None,
     force: bool = False,
 ) -> Dict:
     output_root = Path(output_root) if output_root else p.PAIRED_ROOT
-    total = train_frac + val_frac + test_frac
-    if abs(total - 1.0) > 1e-6:
-        raise ValueError(f"Frações devem somar 1.0 (recebido: {total})")
 
     videos = inventory_videos()
     faces = inventory_faces()
@@ -283,9 +291,8 @@ def build(
             "(python -m src.preprocessing.emotion --from-affectnet)."
         )
 
-    fractions = {"train": train_frac, "val": val_frac, "test": test_frac}
-    video_splits = assign_splits(videos, fractions, seed, key="class")
-    face_splits = assign_splits(faces, fractions, seed, key="class")
+    video_splits = assign_splits(videos, seed, key="class")
+    face_splits = assign_splits(faces, seed, key="class")
 
     if output_root.exists():
         if not force:
@@ -334,7 +341,8 @@ def build(
         "version": 1,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "config": {
-            "fractions": fractions,
+            "split": "original_partition",
+            "val_test_ratio": VAL_TEST_RATIO,
             "seed": seed,
             "reuse_faces": reuse_faces,
             "target": "video_label",
@@ -370,6 +378,7 @@ def build(
     print("Dataset pareado gerado")
     print("=" * 60)
     print(f"Raiz: {output_root}")
+    print(f"Split: partição original (train → train; val/test ← val 50/50)")
     print(f"Inventário: {len(videos)} vídeos, {len(faces)} faces")
     for split in ("train", "val", "test"):
         total_split = sum(counts[split].values())
@@ -419,12 +428,6 @@ def main():
         prog="build_paired_dataset.py",
         description="Gera dataset/paired (RWF-2000 × AffectNet) com symlinks.",
     )
-    parser.add_argument("--train", type=float, default=0.7,
-                        help="Fração de treino (padrão: 0.7)")
-    parser.add_argument("--val", type=float, default=0.15,
-                        help="Fração de validação (padrão: 0.15)")
-    parser.add_argument("--test", type=float, default=0.15,
-                        help="Fração de teste (padrão: 0.15)")
     parser.add_argument("--seed", type=int, default=42,
                         help="Seed para splits e pareamento (padrão: 42)")
     parser.add_argument("--reuse_faces", action="store_true",
@@ -447,9 +450,6 @@ def main():
         sys.exit(1 if errors else 0)
 
     build(
-        train_frac=args.train,
-        val_frac=args.val,
-        test_frac=args.test,
         seed=args.seed,
         reuse_faces=args.reuse_faces,
         output_root=output_root,

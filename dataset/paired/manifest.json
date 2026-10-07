@@ -1,12 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-10-07T14:52:11.304868+00:00",
+  "generated_at": "2026-10-07T16:19:08.783099+00:00",
   "config": {
-    "fractions": {
-      "train": 0.7,
-      "val": 0.15,
-      "test": 0.15
-    },
+    "split": "original_partition",
+    "val_test_ratio": 0.5,
     "seed": 42,
     "reuse_faces": false,
     "target": "video_label",
@@ -32,54 +29,54 @@
   "assigned": {
     "train": {
       "videos": {
-        "violent": 14,
-        "non_violent": 14
+        "violent": 10,
+        "non_violent": 10
       },
       "faces": {
-        "violent": 63,
-        "non_violent": 63
+        "violent": 30,
+        "non_violent": 30
       }
     },
     "val": {
       "videos": {
-        "violent": 3,
-        "non_violent": 3
+        "violent": 5,
+        "non_violent": 5
       },
       "faces": {
-        "violent": 14,
-        "non_violent": 14
+        "violent": 30,
+        "non_violent": 30
       }
     },
     "test": {
       "videos": {
-        "violent": 3,
-        "non_violent": 3
+        "violent": 5,
+        "non_violent": 5
       },
       "faces": {
-        "violent": 13,
-        "non_violent": 13
+        "violent": 30,
+        "non_violent": 30
       }
     }
   },
   "counts": {
     "train": {
-      "violent_violent_face": 14,
-      "non_violent_non_violent_face": 14
+      "violent_violent_face": 10,
+      "non_violent_non_violent_face": 10
     },
     "val": {
-      "violent_violent_face": 3,
-      "non_violent_non_violent_face": 3
+      "violent_violent_face": 5,
+      "non_violent_non_violent_face": 5
     },
     "test": {
-      "violent_violent_face": 3,
-      "violent_non_violent_face": 3,
-      "non_violent_violent_face": 3,
-      "non_violent_non_violent_face": 3
+      "violent_violent_face": 5,
+      "violent_non_violent_face": 5,
+      "non_violent_violent_face": 5,
+      "non_violent_non_violent_face": 5
     }
   },
   "files": {
-    "frames": 46,
-    "emotion": 46
+    "frames": 50,
+    "emotion": 50
   },
-  "n_pairs": 46
+  "n_pairs": 50
 }

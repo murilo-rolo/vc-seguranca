@@ -277,7 +277,7 @@ O pré-processamento é dividido em scripts independentes, cada um executável s
 | `src/preprocessing/pose/` | Extrai keypoints de pose (YOLO26) em `data/pose` |
 | `src/preprocessing/emotion/` | Extrai vetores de emoção (EmotionNet) em `data/emotion` |
 | `src/preprocessing/index/` | Gera índice unificado CSV linkando vídeos com emoções e pose |
-| `src/preprocessing/build_paired_dataset.py` | Gera `dataset/paired/` (RWF-2000 × AffectNet) com symlinks e splits configuráveis |
+| `src/preprocessing/build_paired_dataset.py` | Gera `dataset/paired/` (RWF-2000 × AffectNet) com symlinks e split original do RWF-2000 |
 | `src/preprocessing/pipeline/` | Executa todas as etapas em sequência |
 
 > **Nota**: o impact study cross-label usa o split de teste do dataset pareado (`dataset/paired/test/`), que já contém as 4 células de combinação vídeo×face por construção. O CSV legado (`pipeline_teste.csv`) continua disponível como fallback.
@@ -398,15 +398,15 @@ Une cada vídeo do RWF-2000 com uma face do AffectNet em pares materializados co
 
 ```bash
 python -m src.preprocessing.build_paired_dataset
-# frações de split customizadas
-python -m src.preprocessing.build_paired_dataset --train 0.7 --val 0.15 --test 0.15 --seed 42
+# mudar seed do split/pareamento
+python -m src.preprocessing.build_paired_dataset --seed 42
 # reconstruir / validar symlinks
 python -m src.preprocessing.build_paired_dataset --force
 python -m src.preprocessing.build_paired_dataset --validate
 ```
 
 **Regras:**
-- Splits `train`/`val`/`test` são **frações livres globais** (`--train/--val/--test`), estratificadas por classe — não usam a partição original do RWF-2000.
+- Splits seguem a **partição original** dos dados (mesmo protocolo do CSV, que resultava em ~86% de acurácia): `train` ← partição `train` original (RWF-2000 e `balanced-affectnet`); `val`/`test` ← partição original `val` (e `test`, se existir) dividida 50/50 por classe com seed. A partição `train` nunca aparece em `val`/`test`.
 - `train`/`val` contêm apenas pares **congruentes** (vídeo e face do mesmo rótulo).
 - `test` contém **4 células de mesmo tamanho** com reuso controlado de vídeo (cada vídeo de teste aparece com face congruente e incongruente): `violent_violent_face`, `violent_non_violent_face`, `non_violent_non_violent_face`, `non_violent_violent_face`.
 - **Target = rótulo do vídeo**; o rótulo da face é covariável (guardado nos metadados do par).
@@ -834,7 +834,7 @@ vc-seguranca/
 │   │   │   ├── __init__.py
 │   │   │   └── __main__.py
 │   │   ├── build_dataset_index.py # Módulo com build_index, build_cross_label_index, save_csv, etc.
-│   │   ├── build_paired_dataset.py # Gera dataset/paired (vídeo×face, symlinks, splits configuráveis)
+│   │   ├── build_paired_dataset.py # Gera dataset/paired (vídeo×face, symlinks, split original RWF-2000)
 │   │   ├── emotion/             # Script standalone: extração de emoções
 │   │   │   ├── __init__.py
 │   │   │   └── __main__.py
