@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generated_at": "2026-10-07T16:19:08.783099+00:00",
+  "generated_at": "2026-10-07T17:06:41.183273+00:00",
   "config": {
     "split": "original_partition",
     "val_test_ratio": 0.5,
@@ -29,54 +29,55 @@
   "assigned": {
     "train": {
       "videos": {
-        "violent": 10,
-        "non_violent": 10
+        "violent": 800,
+        "non_violent": 800
       },
       "faces": {
-        "violent": 30,
-        "non_violent": 30
+        "violent": 3983,
+        "non_violent": 7571
       }
     },
     "val": {
       "videos": {
-        "violent": 5,
-        "non_violent": 5
+        "violent": 100,
+        "non_violent": 100
       },
       "faces": {
-        "violent": 30,
-        "non_violent": 30
+        "violent": 768,
+        "non_violent": 1479
       }
     },
     "test": {
       "videos": {
-        "violent": 5,
-        "non_violent": 5
+        "violent": 100,
+        "non_violent": 100
       },
       "faces": {
-        "violent": 30,
-        "non_violent": 30
+        "violent": 768,
+        "non_violent": 1480
       }
     }
   },
   "counts": {
     "train": {
-      "violent_violent_face": 10,
-      "non_violent_non_violent_face": 10
+      "violent_violent_face": 800,
+      "non_violent_non_violent_face": 800
     },
     "val": {
-      "violent_violent_face": 5,
-      "non_violent_non_violent_face": 5
+      "violent_violent_face": 100,
+      "non_violent_non_violent_face": 100
     },
     "test": {
-      "violent_violent_face": 5,
-      "violent_non_violent_face": 5,
-      "non_violent_violent_face": 5,
-      "non_violent_non_violent_face": 5
+      "violent_violent_face": 100,
+      "violent_non_violent_face": 100,
+      "non_violent_violent_face": 100,
+      "non_violent_non_violent_face": 100
     }
   },
   "files": {
-    "frames": 50,
-    "emotion": 50
+    "frames": 2200,
+    "pose": 2200,
+    "emotion": 2200
   },
-  "n_pairs": 50
+  "n_pairs": 2200
 }
