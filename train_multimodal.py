@@ -136,14 +136,26 @@ def main():
     model = _MultimodalWrapper(multimodal_model, video_model).to(device)
 
     print("Criando DataLoaders...")
-    train_loader, val_loader, test_loader = get_multimodal_dataloaders(
-        video_data_root=str(p.PROCESSED_ROOT), pose_data_root=str(p.POSE_ROOT),
-        emotion_data_root=str(p.EMOTION_ROOT), batch_size=args.batch_size,
-        num_frames=args.num_frames, window_size=args.window_size,
-        video_mode="frames", pose_mode="flatten",
-        num_workers=args.num_workers, dataset_name="rwf2000",
-        index_csv=str(p.PIPELINE_CSV_PATH) if p.PIPELINE_CSV_PATH.exists() else None,
-    )
+    from src.datasets.paired_dataset import get_paired_dataloaders, paired_root_exists
+    if paired_root_exists():
+        print(f"✓ Dataset pareado: {p.PAIRED_ROOT}")
+        train_loader, val_loader, test_loader = get_paired_dataloaders(
+            batch_size=args.batch_size,
+            num_frames=args.num_frames, window_size=args.window_size,
+            video_mode="frames", pose_mode="flatten",
+            num_workers=args.num_workers,
+        )
+    else:
+        print("⚠️  dataset/paired não encontrado — usando CSV legado "
+              "(gerar com: python -m src.preprocessing.build_paired_dataset)")
+        train_loader, val_loader, test_loader = get_multimodal_dataloaders(
+            video_data_root=str(p.PROCESSED_ROOT), pose_data_root=str(p.POSE_ROOT),
+            emotion_data_root=str(p.EMOTION_ROOT), batch_size=args.batch_size,
+            num_frames=args.num_frames, window_size=args.window_size,
+            video_mode="frames", pose_mode="flatten",
+            num_workers=args.num_workers, dataset_name="rwf2000",
+            index_csv=str(p.PIPELINE_CSV_PATH) if p.PIPELINE_CSV_PATH.exists() else None,
+        )
 
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(multimodal_model.parameters(), lr=args.learning_rate)

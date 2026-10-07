@@ -57,24 +57,28 @@ def calculate_metrics(
     """
     # Métricas básicas
     accuracy = accuracy_score(y_true, y_pred)
-    
+
+    # labels explícitos: células de avaliação podem ter uma única classe
+    # presente (ex.: split de teste por célula do impact study)
+    labels = [0, 1]
+
     # Métricas por classe
-    precision = precision_score(y_true, y_pred, average=None, zero_division=0)
-    recall = recall_score(y_true, y_pred, average=None, zero_division=0)
-    f1 = f1_score(y_true, y_pred, average=None, zero_division=0)
+    precision = precision_score(y_true, y_pred, average=None, labels=labels, zero_division=0)
+    recall = recall_score(y_true, y_pred, average=None, labels=labels, zero_division=0)
+    f1 = f1_score(y_true, y_pred, average=None, labels=labels, zero_division=0)
     
     # Métricas macro (média das classes)
-    precision_macro = precision_score(y_true, y_pred, average='macro', zero_division=0)
-    recall_macro = recall_score(y_true, y_pred, average='macro', zero_division=0)
-    f1_macro = f1_score(y_true, y_pred, average='macro', zero_division=0)
+    precision_macro = precision_score(y_true, y_pred, average='macro', labels=labels, zero_division=0)
+    recall_macro = recall_score(y_true, y_pred, average='macro', labels=labels, zero_division=0)
+    f1_macro = f1_score(y_true, y_pred, average='macro', labels=labels, zero_division=0)
     
     # Métricas weighted
-    precision_weighted = precision_score(y_true, y_pred, average='weighted', zero_division=0)
-    recall_weighted = recall_score(y_true, y_pred, average='weighted', zero_division=0)
-    f1_weighted = f1_score(y_true, y_pred, average='weighted', zero_division=0)
+    precision_weighted = precision_score(y_true, y_pred, average='weighted', labels=labels, zero_division=0)
+    recall_weighted = recall_score(y_true, y_pred, average='weighted', labels=labels, zero_division=0)
+    f1_weighted = f1_score(y_true, y_pred, average='weighted', labels=labels, zero_division=0)
     
     # Confusion Matrix
-    cm = confusion_matrix(y_true, y_pred)
+    cm = confusion_matrix(y_true, y_pred, labels=labels)
     tn, fp, fn, tp = cm.ravel()
     
     # Specificity
@@ -121,9 +125,9 @@ def calculate_metrics(
         "confusion_matrix_array": cm.tolist()
     }
     
-    if auc_roc is not None:
+    if auc_roc is not None and np.isfinite(auc_roc):
         metrics["auc_roc"] = float(auc_roc)
-    if auc_pr is not None:
+    if auc_pr is not None and np.isfinite(auc_pr):
         metrics["auc_pr"] = float(auc_pr)
     
     return metrics

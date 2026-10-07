@@ -661,17 +661,33 @@ def main():
         # Carregar dataset
         print("Loading dataset...")
         if args.model == "multimodal":
-            _, _, test_loader = get_multimodal_dataloaders(
-                video_data_root=str(p.PROCESSED_ROOT),
-                pose_data_root=str(p.POSE_ROOT),
-                emotion_data_root=str(p.EMOTION_ROOT),
-                batch_size=args.batch_size,
-                num_frames=16,
-                window_size=16,
-                video_mode="frames",
-                pose_mode="keypoints",
-                index_csv=str(p.PIPELINE_CSV_PATH) if p.PIPELINE_CSV_PATH.exists() else None,
+            from src.datasets.paired_dataset import (
+                get_paired_dataloaders,
+                paired_root_exists,
             )
+            if paired_root_exists():
+                print(f"✓ Dataset pareado: {p.PAIRED_ROOT}")
+                _, _, test_loader = get_paired_dataloaders(
+                    batch_size=args.batch_size,
+                    num_frames=16,
+                    window_size=16,
+                    video_mode="frames",
+                    pose_mode="keypoints",
+                )
+            else:
+                print("⚠️  dataset/paired não encontrado — usando CSV legado "
+                      "(gerar com: python -m src.preprocessing.build_paired_dataset)")
+                _, _, test_loader = get_multimodal_dataloaders(
+                    video_data_root=str(p.PROCESSED_ROOT),
+                    pose_data_root=str(p.POSE_ROOT),
+                    emotion_data_root=str(p.EMOTION_ROOT),
+                    batch_size=args.batch_size,
+                    num_frames=16,
+                    window_size=16,
+                    video_mode="frames",
+                    pose_mode="keypoints",
+                    index_csv=str(p.PIPELINE_CSV_PATH) if p.PIPELINE_CSV_PATH.exists() else None,
+                )
         elif args.model == "cnn3d":
             # Clipes 3D do RWF-2000 em formato frame-last (B, T, C, H, W);
             # a permutação (B, T, C, H, W) -> (B, C, T, H, W) é feita no

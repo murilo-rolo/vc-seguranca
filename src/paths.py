@@ -35,6 +35,9 @@ AFFECTNET_ROOT    = DATASET_ROOT / "AffectNet"
 BALANCED_AFFECTNET_ROOT = DATASET_ROOT / "balanced-affectnet"
 PIPELINE_CSV_PATH     = DATASET_ROOT / "pipeline_teste.csv"
 
+# Dataset pareado RWF-2000 (vídeo) + AffectNet (face) via symlinks
+PAIRED_ROOT           = DATASET_ROOT / "paired"
+
 # Cross-label CSVs (impact study: emoção × vídeo)
 PIPELINE_CROSS_LABEL_VIOLENT_FACE    = DATASET_ROOT / "pipeline_cross_label_violent_face.csv"
 PIPELINE_CROSS_LABEL_NON_VIOLENT_FACE = DATASET_ROOT / "pipeline_cross_label_non_violent_face.csv"

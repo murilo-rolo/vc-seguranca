@@ -8,6 +8,11 @@ from .video3d_dataset import (
     RWF2000Video3DDataset,
     get_rwf2000_3d_dataloaders
 )
+from .paired_dataset import (
+    PairedSurveillanceDataset,
+    get_paired_dataloaders,
+    paired_root_exists,
+)
 from src.preprocessing import load_index
 
 __all__ = [
@@ -17,6 +22,8 @@ __all__ = [
     "get_multimodal_dataloaders",
     "RWF2000Video3DDataset",
     "get_rwf2000_3d_dataloaders",
+    "PairedSurveillanceDataset",
+    "get_paired_dataloaders",
+    "paired_root_exists",
     "load_index",
 ]
-

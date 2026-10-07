@@ -1,0 +1,85 @@
+{
+  "version": 1,
+  "generated_at": "2026-10-07T14:52:11.304868+00:00",
+  "config": {
+    "fractions": {
+      "train": 0.7,
+      "val": 0.15,
+      "test": 0.15
+    },
+    "seed": 42,
+    "reuse_faces": false,
+    "target": "video_label",
+    "separator": "__"
+  },
+  "inventory": {
+    "videos": {
+      "train/violent": 10,
+      "train/non_violent": 10,
+      "val/violent": 10,
+      "val/non_violent": 10
+    },
+    "faces": {
+      "test/violent": 30,
+      "test/non_violent": 30,
+      "train/violent": 30,
+      "train/non_violent": 30,
+      "val/violent": 30,
+      "val/non_violent": 30
+    },
+    "pose_available": 0
+  },
+  "assigned": {
+    "train": {
+      "videos": {
+        "violent": 14,
+        "non_violent": 14
+      },
+      "faces": {
+        "violent": 63,
+        "non_violent": 63
+      }
+    },
+    "val": {
+      "videos": {
+        "violent": 3,
+        "non_violent": 3
+      },
+      "faces": {
+        "violent": 14,
+        "non_violent": 14
+      }
+    },
+    "test": {
+      "videos": {
+        "violent": 3,
+        "non_violent": 3
+      },
+      "faces": {
+        "violent": 13,
+        "non_violent": 13
+      }
+    }
+  },
+  "counts": {
+    "train": {
+      "violent_violent_face": 14,
+      "non_violent_non_violent_face": 14
+    },
+    "val": {
+      "violent_violent_face": 3,
+      "non_violent_non_violent_face": 3
+    },
+    "test": {
+      "violent_violent_face": 3,
+      "violent_non_violent_face": 3,
+      "non_violent_violent_face": 3,
+      "non_violent_non_violent_face": 3
+    }
+  },
+  "files": {
+    "frames": 46,
+    "emotion": 46
+  },
+  "n_pairs": 46
+}

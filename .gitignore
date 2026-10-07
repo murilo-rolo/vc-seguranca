@@ -76,6 +76,9 @@ dataset/**/*
 !dataset/**/*.md
 !dataset/**/.gitkeep
 !dataset/**/README.md
+# Dataset pareado: designora a raiz para permitir versionar manifest.json
+# (symlinks e pares continuam ignorados por dataset/**/*)
+!dataset/paired/
 
 # Results - Modelos e relatórios (não versionar)
 results/models/*.pth

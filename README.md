@@ -50,7 +50,7 @@ Este projeto está sendo desenvolvido como parte de um projeto de pesquisa em Vi
 - **Otimizado para Recursos Limitados**: Suporta treinamento em CPUs e GPUs, mixed precision (AMP) e gradient clipping
 - **Métricas Detalhadas**: Gera relatórios completos de avaliação
 - **Pipeline de Avaliação Experimental**: Métricas, robustez a distorções, performance (FPS/latência) e análise de limitações
-- **Impact Study Cross-Label**: Gera CSVs com emoção facial trocada (violent face + non_violent video e vice-versa) para medir o impacto da modalidade de emoção na classificação
+- **Impact Study Cross-Label**: O split de teste do dataset pareado contém 4 células de mesmo tamanho (violent/non_violent × face violent/non_violent) para medir o impacto da modalidade de emoção na classificação
 - **Treinamento Robusto do EmotionNet**: Focal Loss, WeightedRandomSampler, warmup + cosine annealing, early stopping e resume de treino
 - **Download Automático de Datasets**: `download_datasets.py` baixa RWF-2000 e AffectNet via Kaggle API
 - **Código modular**: Funções de treino/validação centralizadas em `src/training/utils.py`
@@ -277,9 +277,10 @@ O pré-processamento é dividido em scripts independentes, cada um executável s
 | `src/preprocessing/pose/` | Extrai keypoints de pose (YOLO26) em `data/pose` |
 | `src/preprocessing/emotion/` | Extrai vetores de emoção (EmotionNet) em `data/emotion` |
 | `src/preprocessing/index/` | Gera índice unificado CSV linkando vídeos com emoções e pose |
+| `src/preprocessing/build_paired_dataset.py` | Gera `dataset/paired/` (RWF-2000 × AffectNet) com symlinks e splits configuráveis |
 | `src/preprocessing/pipeline/` | Executa todas as etapas em sequência |
 
-> **Nota**: `build_dataset_index.py` também fornece `build_cross_label_index()` para gerar CSVs com emoção facial trocada (usado no impact study cross-label).
+> **Nota**: o impact study cross-label usa o split de teste do dataset pareado (`dataset/paired/test/`), que já contém as 4 células de combinação vídeo×face por construção. O CSV legado (`pipeline_teste.csv`) continua disponível como fallback.
 
 #### Organizar vídeos
 
@@ -390,6 +391,45 @@ python -m src.preprocessing.index --split all --seed 42
 video_path,emotion_path,pose_path,label,split,class,video_id
 dataset/data/processed/train/violent/video_0001/frame_sequence.pt,dataset/data/emotion/balanced-affectnet/train/violent/anger_00004.npy,,1,train,violent,video_0001
 ```
+
+#### Gerar dataset pareado (RWF-2000 × AffectNet)
+
+Une cada vídeo do RWF-2000 com uma face do AffectNet em pares materializados como symlinks em `dataset/paired/` — substitui o CSV como índice do treino multimodal e do impact study:
+
+```bash
+python -m src.preprocessing.build_paired_dataset
+# frações de split customizadas
+python -m src.preprocessing.build_paired_dataset --train 0.7 --val 0.15 --test 0.15 --seed 42
+# reconstruir / validar symlinks
+python -m src.preprocessing.build_paired_dataset --force
+python -m src.preprocessing.build_paired_dataset --validate
+```
+
+**Regras:**
+- Splits `train`/`val`/`test` são **frações livres globais** (`--train/--val/--test`), estratificadas por classe — não usam a partição original do RWF-2000.
+- `train`/`val` contêm apenas pares **congruentes** (vídeo e face do mesmo rótulo).
+- `test` contém **4 células de mesmo tamanho** com reuso controlado de vídeo (cada vídeo de teste aparece com face congruente e incongruente): `violent_violent_face`, `violent_non_violent_face`, `non_violent_non_violent_face`, `non_violent_violent_face`.
+- **Target = rótulo do vídeo**; o rótulo da face é covariável (guardado nos metadados do par).
+
+**Estrutura gerada:**
+```
+dataset/paired/
+├── manifest.json                 # config + contagens (versionado)
+├── train/
+│   ├── violent_violent_face/<video>__<face>/
+│   │   ├── frames.pt    -> data/processed/.../frame_sequence.pt
+│   │   ├── pose.npy     -> data/pose/...        (opcional)
+│   │   └── emotion.npy  -> data/emotion/balanced-affectnet/.../<face>.npy
+│   └── non_violent_non_violent_face/...
+├── val/                          # mesmas células congruentes
+└── test/
+    ├── violent_violent_face/...
+    ├── violent_non_violent_face/...
+    ├── non_violent_non_violent_face/...
+    └── non_violent_violent_face/...
+```
+
+Pré-requisitos: frames processados (`python -m src.preprocessing.frames`) e emoções do AffectNet (`python -m src.preprocessing.emotion --from-affectnet`). `train_multimodal.py`, `run_evaluation.py` e o impact study usam `dataset/paired/` automaticamente quando ele existe (o CSV vira fallback legado).
 
 #### Pipeline completo
 
@@ -581,41 +621,29 @@ Os resultados são salvos em `results/experiments/<experiment_name>/`, incluindo
 
 #### 3.5. Impact Study: Cross-Label Emotion × Video
 
-Estudo de impacto que testa o papel da emoção facial no modelo multimodal trocando os labels entre modalidades. Em vez de parear cada vídeo com uma face do mesmo label (congruente), o estudo cria cenários onde a emoção facial **contradiz** o conteúdo do vídeo:
+Estudo de impacto que testa o papel da emoção facial no modelo multimodal. O split de teste do dataset pareado (`dataset/paired/test/`) já contém por construção **4 células de mesmo tamanho**, com reuso controlado de vídeo (cada vídeo de teste aparece com face congruente e incongruente):
 
-| Cenário | Vídeo | Face | Hipótese |
-|---------|-------|------|----------|
-| Baseline (congruente) | violent | violent | Referência |
-| | non_violent | non_violent | |
-| violent_face + non_violent_video | **non_violent** | **violent** | Face de raiva/medo contamina vídeo pacífico → mais FPs |
-| non_violent_face + violent_video | **violent** | **non_violent** | Face feliz/calma atenua violência → mais FNs |
+| Célula | Vídeo | Face | Hipótese |
+|--------|-------|------|----------|
+| `violent_violent_face` | violent | violent | Referência (congruente) |
+| `non_violent_non_violent_face` | non_violent | non_violent | Referência (congruente) |
+| `violent_non_violent_face` | **violent** | **non_violent** | Face feliz/calma atenua violência → mais FNs |
+| `non_violent_violent_face` | **non_violent** | **violent** | Face de raiva/medo contamina vídeo pacífico → mais FPs |
 
-**Geração dos CSVs cross-label:**
+**Cenários avaliados** (todos do split `test`, sem geração de CSVs):
+- `baseline (congruente)` — pooling das 2 células congruentes
+- `cross-label (incongruente)` — pooling das 2 células incongruentes
+- as 4 células individualmente
 
-A função `build_cross_label_index()` em `src/preprocessing/build_dataset_index.py` gera os CSVs trocando o `emotion_path` para a classe oposta, mantendo o `label` e `class` do vídeo original:
-
-```python
-from src.preprocessing.build_dataset_index import build_cross_label_index, save_csv
-
-# Cenário 1: violent face + non_violent video
-rows = build_cross_label_index(
-    scenario="violent_face_non_violent_video",
-    split="all", seed=42,
-)
-save_csv(rows, "dataset/pipeline_cross_label_violent_face.csv")
-
-# Cenário 2: non_violent face + violent video
-rows = build_cross_label_index(
-    scenario="non_violent_face_violent_video",
-    split="all", seed=42,
-)
-save_csv(rows, "dataset/pipeline_cross_label_non_violent_face.csv")
-```
+Os deltas reportados são comparações justas: agregado incongruente vs agregado congruente, e cada célula incongruente vs a célula congruente do mesmo rótulo de vídeo.
 
 **Avaliação cross-label:**
 
 ```bash
-# Avaliação direta (gera CSVs + avalia)
+# Pré-requisito: dataset pareado gerado
+python -m src.preprocessing.build_paired_dataset
+
+# Avaliação direta (valida symlinks + avalia)
 python run_cross_label_evaluation.py \
     --model_path models/multimodal/weights/best_model.pth
 
@@ -623,28 +651,21 @@ python run_cross_label_evaluation.py \
 python run_impact_study.py \
     --model_path models/multimodal/weights/best_model.pth \
     --charts
-
-# Usar CSVs já existentes (pular geração)
-python run_impact_study.py --skip_generation --charts
 ```
 
 **Opções:**
 - `--model_path`: Checkpoint do modelo multimodal (padrão: `models/multimodal/weights/best_model.pth`)
 - `--batch_size`: Tamanho do batch (padrão: 8)
-- `--seed`: Seed para geração dos CSVs (padrão: 42)
 - `--output_dir`: Diretório de saída (padrão: `results/cross_label_impact/`)
 - `--charts`: Gera gráficos comparativos (barras de métricas, matrizes de confusão, delta de F1)
-- `--skip_generation`: Pula geração de CSVs e usa os existentes no output_dir
+- `--skip_validate` (`run_impact_study.py`): Pula a validação dos symlinks do dataset pareado
 
 **Saída gerada em `results/cross_label_impact/`:**
-- `cross_label_report.json` — Relatório completo com métricas por cenário
+- `cross_label_report.json` — Relatório completo com métricas, `n_samples` e células por cenário
 - `metrics_*.json` — Métricas individuais por cenário
-- `pipeline_baseline.csv` — CSV baseline (congruente)
-- `pipeline_violent_face.csv` — CSV violent_face + non_violent_video
-- `pipeline_non_violent_face.csv` — CSV non_violent_face + violent_video
 - `comparison_metrics.png` — Gráfico de barras comparativo (com `--charts`)
 - `confusion_matrices.png` — Matrizes de confusão lado a lado (com `--charts`)
-- `f1_delta.png` — Delta de F1 vs baseline (com `--charts`)
+- `f1_delta.png` — Delta de F1 incongruente vs congruente (com `--charts`)
 
 ### 4. Métricas de Avaliação
 
@@ -813,6 +834,7 @@ vc-seguranca/
 │   │   │   ├── __init__.py
 │   │   │   └── __main__.py
 │   │   ├── build_dataset_index.py # Módulo com build_index, build_cross_label_index, save_csv, etc.
+│   │   ├── build_paired_dataset.py # Gera dataset/paired (vídeo×face, symlinks, splits configuráveis)
 │   │   ├── emotion/             # Script standalone: extração de emoções
 │   │   │   ├── __init__.py
 │   │   │   └── __main__.py
@@ -830,6 +852,7 @@ vc-seguranca/
 │   ├── datasets/              # Datasets e DataLoaders
 │   │   ├── surveillance_dataset.py
 │   │   ├── multimodal_dataset.py
+│   │   ├── paired_dataset.py    # Dataset pareado (lê dataset/paired/)
 │   │   └── video3d_dataset.py
 │   ├── models/                # Modelos de Deep Learning
 │   │   ├── cnn3d_risk.py      # CNN 3D
