@@ -17,8 +17,7 @@ Sistema avançado de detecção de violência em vídeos de segurança (CCTV) ut
   - [Pré-processamento](#1-pré-processamento)
   - [Treinamento](#2-treinamento)
   - [Avaliação](#3-avaliação)
-  - [Impact Study: Cross-Label Emotion × Video](#36-impact-study-cross-label-emotion--video)
-  - [Inferência em Tempo Real](#5-inferência-em-tempo-real)
+  - [Impact Study: Cross-Label Emotion × Video](#35-impact-study-cross-label-emotion--video)
 - [Pipeline Completo de Execução](#pipeline-completo-de-execução)
 - [Estrutura do Projeto](#estrutura-do-projeto)
 - [Requisitos de Sistema](#requisitos-de-sistema)
@@ -41,13 +40,11 @@ Este projeto está sendo desenvolvido como parte de um projeto de pesquisa em Vi
 - **Arquitetura Multimodal**: Combina features de vídeo, pose corporal e emoção facial para detecção robusta
 - **Múltiplos Modelos**: 
   - CNN 3D (R3D, R(2+1)D, MC3) para action recognition — backbone de vídeo **padrão** do multimodal
-  - ResNet-LSTM para análise temporal de vídeo (alternativo)
   - EmotionNet (DeiT-Small Vision Transformer) para classificação de emoções faciais
   - MultimodalRiskDetector para fusão de múltiplas modalidades
 - **Estratégias de Fusão**: Early Fusion, Late Fusion e Attention-based Fusion
 - **Transfer Learning**: Utiliza pesos pré-treinados (ImageNet, Kinetics400)
-- **Pipeline Completo**: Pré-processamento, extração de features, treinamento, avaliação e inferência em tempo real
-- **Detecção em Tempo Real**: Suporte para webcam e streams RTSP
+- **Pipeline Completo**: Pré-processamento, extração de features, treinamento e avaliação
 - **Sistema de Alertas**: Threshold configurável e detecção de janelas consecutivas
 - **Altamente Configurável**: Parâmetros ajustáveis para diferentes cenários
 - **Otimizado para Recursos Limitados**: Suporta treinamento em CPUs e GPUs, mixed precision (AMP) e gradient clipping
@@ -128,40 +125,7 @@ python download_datasets.py --affectnet
 
 O projeto implementa múltiplas arquiteturas para diferentes aspectos da detecção de violência:
 
-### 1. ResNet-LSTM (Modelo Base de Vídeo)
-
-Arquitetura híbrida para análise temporal de vídeo:
-
-```
-┌─────────────┐
-│   Frames    │ (16 frames por vídeo)
-└──────┬──────┘
-       │
-       ▼
-┌─────────────────┐
-│   ResNet-18     │ (pré-treinada no ImageNet)
-│  Feature Ext.   │ → 512 dimensões por frame
-└──────┬──────────┘
-       │
-       ▼
-┌─────────────────┐
-│      LSTM       │ (2 camadas, hidden_size=256)
-│  Temporal Model │ → Modela dependências temporais
-└──────┬──────────┘
-       │
-       ▼
-┌─────────────────┐
-│   FC Layer      │ (classificação binária)
-│   Output: 2     │ → [non-violent, violent]
-└─────────────────┘
-```
-
-**Componentes:**
-- ResNet-18 pré-treinada no ImageNet (extrai 512 dims por frame)
-- LSTM com 2 camadas (hidden_size=256) para modelagem temporal
-- Camada FC final para classificação binária
-
-### 2. CNN 3D (Action Recognition)
+### 1. CNN 3D (Action Recognition)
 
 Modelos 3D para reconhecimento de ações em vídeo:
 
@@ -169,7 +133,7 @@ Modelos 3D para reconhecimento de ações em vídeo:
 - **R(2+1)D-18**: ResNet com convoluções factorizadas (2D+1D)
 - **MC3-18**: Mixed Convolution 3D
 
-### 3. EmotionNet (Reconhecimento de Emoções)
+### 2. EmotionNet (Reconhecimento de Emoções)
 
 Modelo baseado em **DeiT-Small** (Data-efficient Image Transformer) para classificação de emoções faciais:
 
@@ -208,16 +172,16 @@ Modelo baseado em **DeiT-Small** (Data-efficient Image Transformer) para classif
 **Classes de Emoção:**
 - Anger, Disgust, Fear, Happy, Neutral, Sad, Surprise, Contempt
 
-### 4. MultimodalRiskDetector (Modelo Principal)
+### 3. MultimodalRiskDetector (Modelo Principal)
 
 Arquitetura multimodal que combina todas as modalidades:
 
 ```
 ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐
-│  Video Features │  │  Pose Features  │  │ Emotion Features│
-│  (ResNet-LSTM)  │  │  (YOLO26)     │  │  (EmotionNet)   │
-│  T × 256        │  │  T × 99         │  │  T × 128        │
-│  (CNN3D: T×512) │  │                 │  │  (embeddings)   │
+│  Video Features │  │  Pose Features  │ │ Emotion Features│
+│  (CNN3D)        │  │  (YOLO26)     │  │  (EmotionNet)   │
+│  T × 512        │  │  T × 99         │  │  T × 128        │
+│                 │  │                 │  │  (embeddings)   │
 └────────┬────────┘  └────────┬────────┘  └────────┬────────┘
          │                    │                    │
          ▼                    ▼                    ▼
@@ -246,7 +210,7 @@ Arquitetura multimodal que combina todas as modalidades:
 - **Cross-Attention**: Vídeo (query) atende às memórias de pose + emoção via Multi-Head Attention (3 heads). A saída é agregada e classificada. Fusion `early`/`late` foram removidos — `fusion_method` agora aceita apenas `cross_attention`.
 
 **Modalidades:**
-- **Vídeo**: Features extraídas do CNN 3D R2Plus1D (512 dims, **padrão**) ou ResNet-LSTM (256 dims) — usadas como *token* de consulta
+- **Vídeo**: Features extraídas do CNN 3D R2Plus1D (512 dims) — usadas como *token* de consulta
 - **Pose**: 17 keypoints do YOLO26 (51 dims: x, y, confidence)
 - **Emoção**: embeddings de 128 dims da penúltima camada do EmotionNet (não mais probabilidades de 8 classes)
 
@@ -463,22 +427,7 @@ preprocess_dataset(
 
 O projeto oferece múltiplos scripts de treinamento para diferentes modelos:
 
-#### 2.1. Treinamento ResNet-LSTM (Modelo Base)
-
-Treinamento do modelo ResNet-LSTM para análise de vídeo:
-
-```bash
-python -m src.training.train \
-    --batch_size 8 \
-    --num_frames 16 \
-    --num_epochs 50 \
-    --learning_rate 1e-4 \
-    --hidden_size 256 \
-    --num_layers 2 \
-    --dropout 0.3
-```
-
-#### 2.2. Treinamento EmotionNet
+#### 2.1. Treinamento EmotionNet
 
 Treina o modelo de reconhecimento de emoções (DeiT-Small) no Balanced-AffectNet:
 
@@ -505,7 +454,7 @@ python train_emotion_model.py \
 
 O dataset de emoção é localizado automaticamente em `dataset/balanced-affectnet` (splits `train`/`val`; se ausente, o AffectNet legado em `dataset/AffectNet` é usado como fallback). O modelo é salvo em `models/emotion_cnn/weights/best_model.pth`.
 
-#### 2.3. Treinamento CNN 3D em RWF-2000 (2 classes)
+#### 2.2. Treinamento CNN 3D em RWF-2000 (2 classes)
 
 O backbone é pré-treinado no **Kinetics400** (carregado automaticamente via torchvision) e o script faz o fine-tuning em RWF-2000:
 
@@ -522,7 +471,7 @@ python train_cnn3d.py \
 
 Os pesos são salvos em `models/cnn3d/weights/best_model.pth`.
 
-#### 2.4. Treinamento Multimodal (Modelo Principal)
+#### 2.3. Treinamento Multimodal (Modelo Principal)
 
 Treina o modelo multimodal completo combinando vídeo, pose e emoção:
 
@@ -535,27 +484,12 @@ python train_multimodal.py \
 
 **Parâmetros principais:**
 - `--use_temporal_modeling`: Usa LSTM para modelagem temporal de pose e emoção
-- `--video_backbone`: Backbone de vídeo do multimodal — `cnn3d` (padrão) ou `resnet_lstm`
-- `--video_model_path`: Caminho para o backbone de vídeo pré-treinado (padrão: `models/cnn3d/weights/best_model.pth` se `--video_backbone cnn3d`, `models/resnet_lstm/weights/best_model.pth` se `resnet_lstm`)
+- `--video_model_path`: Caminho para o checkpoint do backbone de vídeo CNN 3D
 - `--window_size`: Tamanho da janela temporal (padrão: 16)
 
-A fusão é sempre **cross-attention** (sem flag `--fusion_method`). O checkpoint salva `fusion_method=cross_attention`, `emotion_feature_dim=128`, `video_backbone` e `video_feature_dim` (512 para CNN 3D, 256 para ResNet-LSTM), usados automaticamente na inferência e avaliação.
+A fusão é sempre **cross-attention** (sem flag `--fusion_method`). O checkpoint salva `fusion_method=cross_attention`, `emotion_feature_dim=128`, `video_backbone` e `video_feature_dim` (512), usados automaticamente na inferência e avaliação.
 
 O modelo é salvo em `models/multimodal/weights/best_model.pth`.
-
-#### Parâmetros Principais
-
-| Parâmetro | Descrição | Padrão | Recomendação |
-|-----------|-----------|--------|--------------|
-| `--batch_size` | Tamanho do batch | 8 | 4-8 para GPU, 2-4 para CPU |
-| `--num_frames` | Frames por vídeo | 16 | 8-32 dependendo do vídeo |
-| `--num_epochs` | Número de épocas | 50 | 10 para teste, 50+ para produção |
-| `--learning_rate` | Taxa de aprendizado | 1e-4 | 1e-4 a 1e-3 |
-| `--hidden_size` | Tamanho do hidden state LSTM | 256 | 128-512 |
-| `--num_layers` | Camadas LSTM | 2 | 1-3 |
-| `--dropout` | Taxa de dropout | 0.3 | 0.3-0.5 |
-| `--num_workers` | Workers do DataLoader | 4 | 0-4 dependendo da CPU |
-| `--early_stopping_patience` | Paciência do early stopping | 10 | 5-15 |
 
 **Dicas para computadores com poucos recursos:**
 - Use `--batch_size 4` ou `--batch_size 2` para reduzir uso de memória
@@ -563,21 +497,11 @@ O modelo é salvo em `models/multimodal/weights/best_model.pth`.
 - Use `--num_epochs 10` para testes rápidos
 - Use `--device cpu` se tiver problemas com GPU
 
-O melhor modelo será salvo automaticamente em `models/resnet_lstm/weights/best_model.pth`.
-
 ### 3. Avaliação
 
 O script `run_evaluation.py` executa um pipeline completo de experimentos de avaliação. O tipo de modelo é selecionado com `--model`:
 
-#### 3.1. Avaliação de Modelo Unimodal (ResNet-LSTM)
-
-```bash
-python run_evaluation.py \
-    --model baseline \
-    --model_path models/resnet_lstm/weights/best_model.pth
-```
-
-#### 3.2. Avaliação de Modelo Multimodal
+#### 3.1. Avaliação de Modelo Multimodal
 
 ```bash
 python run_evaluation.py \
@@ -585,7 +509,7 @@ python run_evaluation.py \
     --model_path models/multimodal/weights/best_model.pth
 ```
 
-#### 3.3. Avaliação de Modelo CNN 3D
+#### 3.2. Avaliação de Modelo CNN 3D
 
 ```bash
 python run_evaluation.py \
@@ -595,13 +519,12 @@ python run_evaluation.py \
 
 Os resultados do CNN 3D são salvos em `results/cnn3d/`.
 
-#### 3.4. Avaliação por Sub-Modelo (F5)
+#### 3.3. Avaliação por Sub-Modelo (F5)
 
-Avalia cada branch do modelo multimodal **independentemente** — `video` (CNN 3D por padrão; use `--video_backbone resnet_lstm` para ResNet-LSTM), `pose` (branch LSTM de pose do multimodal) e `emotion` (EmotionNet, classificação binária violent/non_violent):
+Avalia cada branch do modelo multimodal **independentemente** — `video` (CNN 3D), `pose` (branch LSTM de pose do multimodal) e `emotion` (EmotionNet, classificação binária violent/non_violent):
 
 ```bash
 python run_evaluation.py --model video   --model_path models/cnn3d/weights/best_model.pth
-python run_evaluation.py --model video   --video_backbone resnet_lstm --model_path models/resnet_lstm/weights/best_model.pth
 python run_evaluation.py --model pose    --model_path models/multimodal/weights/best_model.pth
 python run_evaluation.py --model emotion --model_path models/emotion_cnn/weights/best_model.pth
 
@@ -611,7 +534,7 @@ python run_evaluation.py --model multimodal --model_path models/multimodal/weigh
 
 As métricas de cada sub-modelo são salvas em `results/{video,pose,emotion}/metrics.json` e o relatório agregado em `results/reports/per_model_evaluation.json`.
 
-#### 3.5. Experimentos de Avaliação
+#### 3.4. Experimentos de Avaliação
 
 Além das métricas básicas, o script pode executar outros experimentos:
 
@@ -623,10 +546,10 @@ python run_evaluation.py \
     --all
 
 # Executar experimentos específicos
-python run_evaluation.py --model baseline --model_path <modelo> --metrics
-python run_evaluation.py --model baseline --model_path <modelo> --robustness
-python run_evaluation.py --model baseline --model_path <modelo> --performance
-python run_evaluation.py --model baseline --model_path <modelo> --limitations
+python run_evaluation.py --model multimodal --model_path <modelo> --metrics
+python run_evaluation.py --model multimodal --model_path <modelo> --robustness
+python run_evaluation.py --model multimodal --model_path <modelo> --performance
+python run_evaluation.py --model multimodal --model_path <modelo> --limitations
 
 # Gerar gráficos padronizados em results/charts/
 python run_evaluation.py --model multimodal --model_path <modelo> --all --charts
@@ -636,9 +559,8 @@ python run_evaluation.py --model multimodal --model_path <modelo> --impact_study
 ```
 
 **Parâmetros:**
-- `--model`: `baseline`, `cnn3d`, `multimodal`, `video`, `pose` ou `emotion` (obrigatório)
+- `--model`: `cnn3d`, `multimodal`, `video`, `pose` ou `emotion` (obrigatório)
 - `--model_path`: Caminho para checkpoint do modelo (obrigatório; para `video`/`pose`/`emotion` use os flags específicos abaixo)
-- `--video_backbone`: Backbone do sub-modelo `video` — `cnn3d` (padrão) ou `resnet_lstm` (também usado para extrair features do multimodal)
 - `--video_model_path` / `--pose_model_path` / `--emotion_model_path`: checkpoints explícitos dos sub-modelos (padrão: `models/<modelo>/weights/best_model.pth`)
 - `--metrics`: Métricas básicas (padrão se nenhum experimento for especificado)
 - `--robustness`: Testa robustez a distorções (blur, ruído, baixa iluminação, oclusão, variação de resolução)
@@ -657,7 +579,7 @@ Os resultados são salvos em `results/experiments/<experiment_name>/`, incluindo
 - `impact_study/` — `impact_study.json` e `impact_ranking.json` (quando `--impact_study`)
 - `evaluation_summary.json` — resumo geral
 
-#### 3.6. Impact Study: Cross-Label Emotion × Video
+#### 3.5. Impact Study: Cross-Label Emotion × Video
 
 Estudo de impacto que testa o papel da emoção facial no modelo multimodal trocando os labels entre modalidades. Em vez de parear cada vídeo com uma face do mesmo label (congruente), o estudo cria cenários onde a emoção facial **contradiz** o conteúdo do vídeo:
 
@@ -735,37 +657,6 @@ O script de avaliação calcula as seguintes métricas:
 - **Matriz de Confusão**: Visualização de erros de classificação
 - **ROC-AUC**: Área sob a curva ROC
 - **PR-AUC**: Área sob a curva Precision-Recall
-
-### 5. Inferência em Tempo Real
-
-Execute detecção de violência em tempo real usando webcam ou stream RTSP:
-
-```bash
-python run_realtime_risk_detection.py \
-    --multimodal_model models/multimodal/weights/best_model.pth \
-    --emotion_model models/emotion_cnn/weights/best_model.pth \
-    --source 0 \
-    --risk_threshold 0.8 \
-    --consecutive_windows 3
-```
-
-O backbone de vídeo padrão é o **CNN 3D** (checkpoint em `models/cnn3d/weights/best_model.pth`). Para usar ResNet-LSTM, informe `--video_backbone resnet_lstm --video_model models/resnet_lstm/weights/best_model.pth`.
-
-**Parâmetros:**
-- `--source`: `0` para webcam ou URL RTSP (ex: `rtsp://...`)
-- `--risk_threshold`: Threshold de probabilidade para alerta (0.0-1.0)
-- `--consecutive_windows`: Número de janelas consecutivas acima do threshold para alerta
-- `--window_size`: Tamanho da janela temporal (padrão: 16)
-- `--overlap`: Sobreposição entre janelas (padrão: 8)
-- `--frame_size`: Tamanho dos frames para processamento H W (padrão: `224 224`)
-- `--face_aggregation`: `mean` (padrão) ou `max` — agregação de **todas** as faces de um frame em um único embedding de emoção
-- `--video_backbone`: `cnn3d` (padrão) ou `resnet_lstm` — backbone de vídeo do multimodal
-- `--cnn3d_model`: Caminho para modelo CNN 3D (padrão: `models/cnn3d/weights/best_model.pth`)
-- `--video_model`: Caminho para modelo ResNet-LSTM (usado se `--video_backbone resnet_lstm`)
-- `--no_display`: Não exibir o vídeo (apenas processar)
-- `--device`: Device para inferência (`cuda`/`cpu`)
-
-O `video_backbone` e o `video_feature_dim` do modelo multimodal são lidos do próprio checkpoint — não é preciso informá-los na linha de comando.
 
 ## Estrutura de Dados
 
@@ -893,9 +784,6 @@ vc-seguranca/
 │   ├── pose/                  # Keypoints de pose
 │   └── emotion/               # Vetores de emoção
 ├── models/                    # Modelos treinados (pesos + experimentos)
-│   ├── resnet_lstm/           # ResNet-18 + LSTM
-│   │   ├── weights/           # best_model.pth
-│   │   └── experiments/       # Logs e métricas de treinamento
 │   ├── emotion_cnn/           # EmotionNet (DeiT-Small)
 │   │   ├── weights/           # best_model.pth, confusion_matrix.npy
 │   │   └── experiments/       # training_history.json, confusion_matrix.png
@@ -944,13 +832,11 @@ vc-seguranca/
 │   │   ├── multimodal_dataset.py
 │   │   └── video3d_dataset.py
 │   ├── models/                # Modelos de Deep Learning
-│   │   ├── resnet_lstm.py     # ResNet-LSTM
 │   │   ├── cnn3d_risk.py      # CNN 3D
 │   │   ├── emotion_cnn.py     # EmotionNet (DeiT-Small)
 │   │   ├── multimodal_risk.py # MultimodalRiskDetector
 │   │   └── losses.py          # Focal Loss
 │   ├── training/              # Scripts de treinamento
-│   │   ├── train.py           # Treinamento ResNet-LSTM
 │   │   └── utils.py           # Funções compartilhadas (run_epoch, dataloader, etc.)
 │   ├── evaluation/            # Avaliação experimental
 │   │   ├── metrics.py         # Métricas básicas (acc, precision, AUC-ROC, PR)
@@ -959,9 +845,6 @@ vc-seguranca/
 │   │   ├── limitations_analysis.py # FPs, FNs, casos limítrofes
 │   │   ├── ablation_study.py  # Estudo de ablação
 │   │   └── utils.py           # Aplicação de distorções e utilitários
-│   └── inference/             # Inferência
-│       ├── realtime_risk_detector.py
-│       └── multi_camera_detector.py
 ├── results/                   # Resultados de experimentos
 │   ├── experiments/           # Resultados do run_evaluation.py
 │   ├── comparison/            # Comparação baseline vs multimodal
@@ -1045,43 +928,7 @@ vc-seguranca/
 
 ## Pipeline Completo de Execução
 
-### Opção 1: Pipeline Automatizado (Recomendado)
-
-Use o script master `train_pipeline.py` para automatizar todo o processo:
-
-```bash
-# Treinar tudo do zero (pipeline completo)
-python train_pipeline.py --all
-
-# Treinar apenas modelos base
-python train_pipeline.py --base_models
-
-# Treinar apenas multimodal (assumindo modelos base já existem)
-python train_pipeline.py --multimodal
-
-# Treinar apenas um modelo específico
-python train_pipeline.py --resnet_lstm
-python train_pipeline.py --emotion
-python train_pipeline.py --cnn3d
-
-# Treinar com opções customizadas
-python train_pipeline.py --all --skip_emotion --skip_cnn3d --epochs 30 --batch_size 4
-
-# Forçar retreinamento mesmo se modelos já existirem
-python train_pipeline.py --all --force_retrain
-
-# Caminhos customizados de datasets
-python train_pipeline.py --all --affectnet_path /caminho/balanced-affectnet
-```
-
-**Vantagens do script master:**
-- ✅ Valida pré-requisitos automaticamente
-- ✅ Detecta modelos já treinados e pergunta se deseja retreinar
-- ✅ Orquestra toda a sequência de treinamento
-- ✅ Fornece relatório detalhado ao final
-- ✅ Trata erros e permite continuar com etapas opcionais
-
-### Opção 2: Pipeline Manual (Passo a Passo)
+### Pipeline Manual (Passo a Passo)
 
 Se preferir executar manualmente:
 
@@ -1106,13 +953,10 @@ Se preferir executar manualmente:
 
 2. **Treinamento de Modelos Base**
    ```bash
-   # 1. Treinar ResNet-LSTM (usado como baseline)
-   python -m src.training.train --epochs 50
-   
-   # 2. Treinar CNN 3D (backbone de vídeo padrão do multimodal)
+   # 1. Treinar CNN 3D (backbone de vídeo padrão do multimodal)
    python train_cnn3d.py
    
-   # 3. Treinar EmotionNet (se ainda não tiver)
+   # 2. Treinar EmotionNet (se ainda não tiver)
    python train_emotion_model.py
    ```
 
@@ -1121,12 +965,6 @@ Se preferir executar manualmente:
    # Backbone de vídeo padrão: CNN 3D (models/cnn3d/weights/best_model.pth)
    python train_multimodal.py \
        --epochs 50
-   
-   # Alternativa: usar ResNet-LSTM como backbone de vídeo
-   python train_multimodal.py \
-       --epochs 50 \
-       --video_backbone resnet_lstm \
-       --video_model_path models/resnet_lstm/weights/best_model.pth
    ```
 
 4. **Avaliação**
@@ -1136,21 +974,13 @@ Se preferir executar manualmente:
        --model_path models/multimodal/weights/best_model.pth
    ```
 
-5. **Inferência em Tempo Real**
-   ```bash
-   # Backbone de vídeo padrão: CNN 3D
-   python run_realtime_risk_detection.py \
-       --multimodal_model models/multimodal/weights/best_model.pth \
-       --emotion_model models/emotion_cnn/weights/best_model.pth
-   ```
-
 ### Ordem de Execução Recomendada
 
 **Sequência completa:**
-1. Pré-processamento → 2. Modelos Base → 3. Multimodal → 4. Avaliação → 5. Inferência
+1. Pré-processamento → 2. Modelos Base → 3. Multimodal → 4. Avaliação
 
 **Dependências:**
-- Multimodal requer: CNN 3D (obrigatório — backbone de vídeo padrão) ou ResNet-LSTM (alternativo via `--video_backbone resnet_lstm`), EmotionNet (opcional), Pose e Emotion extraídos
+- Multimodal requer: CNN 3D (backbone de vídeo), EmotionNet (opcional), Pose e Emotion extraídos
 - EmotionNet requer: Balanced-AffectNet para treinamento (opcional)
 
 ## Referências

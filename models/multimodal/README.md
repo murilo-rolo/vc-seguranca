@@ -16,7 +16,7 @@ multimodal/
 
 ## Modalidades
 
-- **Video Features**: CNN 3D R2Plus1D (512 dims, **padrão**) ou ResNet-LSTM (256 dims) — token de consulta
+- **Video Features**: CNN 3D R2Plus1D (512 dims) — token de consulta
 - **Pose Features**: Keypoints de pose (YOLO26, 51 dims por frame: 17 joints × 3)
 - **Emotion Features**: Embeddings de 128 dims (penúltima camada do EmotionNet) — não mais probabilidades de 8 classes. Por frame, **todas** as faces detectadas são agregadas em um único embedding (mean/max, `--face_aggregation`); sem faces → embedding neutro
 
@@ -34,18 +34,15 @@ multimodal/
 ```bash
 # Backbone de vídeo padrão: CNN 3D (models/cnn3d/weights/best_model.pth)
 python train_multimodal.py --epochs 50 --batch_size 8
-
-# Alternativa: ResNet-LSTM como backbone de vídeo
-python train_multimodal.py --epochs 50 --batch_size 8 --video_backbone resnet_lstm --video_model_path models/resnet_lstm/weights/best_model.pth
 ```
 
 ## Método de Fusão
 
 - **Cross-Attention** (único): Vídeo (query) atende às memórias de pose + emoção via Multi-Head Attention (3 heads). Fusion `early`/`late` foram removidos — `fusion_method` aceita apenas `cross_attention`.
 
-O checkpoint salva `fusion_method`, `emotion_feature_dim` (128), `video_backbone` e `video_feature_dim` (512/256); a inferência e a avaliação leem esses valores automaticamente.
+O checkpoint salva `fusion_method`, `emotion_feature_dim` (128), `video_backbone` e `video_feature_dim` (512); a inferência e a avaliação leem esses valores automaticamente.
 
 ## Pré-requisitos
 
-1. Backbone de vídeo treinado — CNN 3D por padrão (`models/cnn3d/weights/best_model.pth`; use `--video_backbone resnet_lstm` para ResNet-LSTM, `models/resnet_lstm/weights/best_model.pth`)
+1. Backbone de vídeo treinado — CNN 3D (`models/cnn3d/weights/best_model.pth`)
 2. Dados de pose e emoção processados (emoção em formato `T × 128`)

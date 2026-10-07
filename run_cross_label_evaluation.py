@@ -40,9 +40,12 @@ def load_multimodal_model(model_path: str, device: str):
     fusion_method = checkpoint.get("fusion_method", "cross_attention")
     use_temporal = checkpoint.get("use_temporal_modeling", True)
     video_backbone_ckpt = checkpoint.get("video_backbone", "cnn3d")
-    video_feature_dim = checkpoint.get("video_feature_dim")
-    if video_feature_dim is None:
-        video_feature_dim = 512 if video_backbone_ckpt == "cnn3d" else 256
+    if video_backbone_ckpt != "cnn3d":
+        raise ValueError(
+            f"Backbone de vídeo '{video_backbone_ckpt}' não é mais suportado; "
+            "o projeto usa apenas 'cnn3d'."
+        )
+    video_feature_dim = checkpoint.get("video_feature_dim") or 512
 
     model = create_multimodal_model(
         video_feature_dim=video_feature_dim,
@@ -59,29 +62,19 @@ def load_multimodal_model(model_path: str, device: str):
         model.load_state_dict(checkpoint)
 
     # Backbone de vídeo
-    if video_backbone_ckpt == "cnn3d":
-        vckpt_path = str(p.CNN3D_WEIGHTS / "best_model.pth")
-        vckpt = torch.load(vckpt_path, map_location=device)
-        vmodel_name = vckpt.get("model_name") or vckpt.get("backbone") or "r2plus1d_18"
-        video_model = create_cnn3d_model(
-            model_name=vmodel_name,
-            num_classes=2,
-            checkpoint_path=vckpt_path,
-            device=device,
-        )
-    else:
-        from src.models.resnet_lstm import create_model as create_video_model
-        vckpt_path = str(p.RESNET_LSTM_WEIGHTS / "best_model.pth")
-        video_model = create_video_model(
-            num_frames=16, hidden_size=256, num_layers=2,
-            dropout=0.3, num_classes=2, pretrained=True, device=device,
-        )
-        vckpt = torch.load(vckpt_path, map_location=device)
-        video_model.load_state_dict(vckpt.get("model_state_dict", vckpt))
+    vckpt_path = str(p.CNN3D_WEIGHTS / "best_model.pth")
+    vckpt = torch.load(vckpt_path, map_location=device)
+    vmodel_name = vckpt.get("model_name") or vckpt.get("backbone") or "r2plus1d_18"
+    video_model = create_cnn3d_model(
+        model_name=vmodel_name,
+        num_classes=2,
+        checkpoint_path=vckpt_path,
+        device=device,
+    )
     video_model.eval()
 
     from run_evaluation import _MultimodalEvalWrapper
-    wrapper = _MultimodalEvalWrapper(model, video_model, video_backbone_ckpt)
+    wrapper = _MultimodalEvalWrapper(model, video_model)
     wrapper.eval()
     return wrapper
 

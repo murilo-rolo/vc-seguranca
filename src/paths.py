@@ -45,11 +45,6 @@ CROSS_LABEL_RESULTS_ROOT = RESULTS_ROOT / "cross_label_impact"
 # ── Novos paths por modelo (estrutura organizada) ──────────────────────────────
 MODELS_BASE       = PROJECT_ROOT / "models"
 
-# ResNet-LSTM
-RESNET_LSTM_ROOT       = MODELS_BASE / "resnet_lstm"
-RESNET_LSTM_WEIGHTS    = RESNET_LSTM_ROOT / "weights"
-RESNET_LSTM_EXPERIMENTS = RESNET_LSTM_ROOT / "experiments"
-
 # Emotion CNN (DeiT)
 EMOTION_CNN_ROOT       = MODELS_BASE / "emotion_cnn"
 EMOTION_CNN_WEIGHTS    = EMOTION_CNN_ROOT / "weights"

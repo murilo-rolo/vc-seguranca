@@ -2,7 +2,7 @@
 Modelo Multimodal para Detecção de Risco/Violência.
 
 Este módulo implementa fusão de múltiplas modalidades:
-- Video Features (ResNet-LSTM ou CNN3D)
+- Video Features (CNN3D)
 - Pose Features (keypoints de pose)
 - Emotion Features (vetores de emoção facial)
 
@@ -39,7 +39,7 @@ class MultimodalRiskDetector(nn.Module):
     def __init__(
         self,
         # Dimensões de entrada
-        video_feature_dim: int = 512,      # D_v: saída do CNN 3D (padrão) / ResNet-LSTM
+        video_feature_dim: int = 512,      # D_v: saída do CNN 3D
         pose_feature_dim: int = 51,        # D_p: 17 joints * 3 (x, y, confidence) se flatten
         emotion_feature_dim: int = 128,    # D_e: 128-d embeddings de emoção
         num_frames: int = 16,              # T: tamanho da janela temporal

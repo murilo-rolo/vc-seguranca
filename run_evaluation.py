@@ -2,17 +2,14 @@
 Script principal para executar todos os experimentos de avaliação.
 
 Uso:
-    # Avaliar baseline
-    python run_evaluation.py --model baseline --model_path results/models/best_model.pth
-    
     # Avaliar multimodal
     python run_evaluation.py --model multimodal --model_path results/multimodal/best_model.pth
     
     # Avaliar CNN 3D
     python run_evaluation.py --model cnn3d --model_path models/cnn3d/weights/best_model.pth
     
-    # Avaliar sub-modelo de vídeo (ResNet-LSTM) independentemente
-    python run_evaluation.py --model video --model_path models/resnet_lstm/weights/best_model.pth --metrics
+    # Avaliar sub-modelo de vídeo (CNN 3D) independentemente
+    python run_evaluation.py --model video --model_path models/cnn3d/weights/best_model.pth --metrics
     
     # Avaliar sub-modelo de pose (branch do multimodal) independentemente
     python run_evaluation.py --model pose --model_path models/multimodal/weights/best_model.pth --metrics
@@ -34,6 +31,7 @@ import argparse
 import torch
 import torch.nn as nn
 from pathlib import Path
+from typing import Optional
 import json
 
 from src.evaluation.metrics import MetricsCalculator
@@ -42,11 +40,9 @@ from src.evaluation.performance_eval import PerformanceEvaluator
 from src.evaluation.limitations_analysis import LimitationsAnalyzer
 from src.evaluation.ablation_study import AblationStudy
 from src.evaluation.charts import generate_report
-from src.models.resnet_lstm import create_model as create_video_model
 from src.models.multimodal_risk import create_multimodal_model
 from src.models.cnn3d_risk import create_cnn3d_model
 from src.models.emotion_cnn import create_emotion_model
-from src.datasets.surveillance_dataset import get_dataloaders
 from src.datasets.multimodal_dataset import get_multimodal_dataloaders
 from src.datasets.video3d_dataset import get_rwf2000_3d_dataloaders
 from src.pose.pose_dataset import get_pose_dataloaders
@@ -126,18 +122,16 @@ class _MultimodalEvalWrapper(nn.Module):
     O dataloader multimodal fornece frames brutos (B, T, C, H, W); o backbone
     extrai o clip token (B, D_v) antes do forward multimodal (cross-attention).
     """
-    def __init__(self, multimodal, video_model, video_backbone: str = "cnn3d"):
+    def __init__(self, multimodal, video_model):
         super().__init__()
         self.multimodal = multimodal
         self.video_model = video_model
-        self.video_backbone = video_backbone
 
     def forward(self, video, pose, emotion):
         with torch.no_grad():
             if len(video.shape) == 5:
                 # Frames em frame-last (B, T, C, H, W); CNN3D espera (B, C, T, H, W)
-                if self.video_backbone == "cnn3d":
-                    video = video.permute(0, 2, 1, 3, 4)
+                video = video.permute(0, 2, 1, 3, 4)
                 video = self.video_model.get_features(video)  # (B, D_v) clip token
         return self.multimodal(video, pose, emotion)
 
@@ -170,35 +164,22 @@ def load_model(
     model_type: str,
     model_path: str,
     device: str,
-    video_backbone: str = "cnn3d",
     video_model_path: Optional[str] = None,
 ):
     """Carrega modelo do checkpoint."""
     checkpoint = torch.load(model_path, map_location=device)
     
-    if model_type == "baseline":
-        model = create_video_model(
-            num_frames=16,
-            hidden_size=256,
-            num_layers=2,
-            dropout=0.3,
-            num_classes=2,
-            pretrained=True,
-            device=device
-        )
-        if 'model_state_dict' in checkpoint:
-            model.load_state_dict(checkpoint['model_state_dict'])
-        else:
-            model.load_state_dict(checkpoint)
-    
-    elif model_type == "multimodal":
+    if model_type == "multimodal":
         fusion_method = checkpoint.get('fusion_method', 'cross_attention')
         use_temporal = checkpoint.get('use_temporal_modeling', True)
         # Dimensão/backbone de vídeo lidos do checkpoint (AD-013: cnn3d default)
         video_backbone_ckpt = checkpoint.get('video_backbone', 'cnn3d')
-        video_feature_dim = checkpoint.get('video_feature_dim')
-        if video_feature_dim is None:
-            video_feature_dim = 512 if video_backbone_ckpt == 'cnn3d' else 256
+        if video_backbone_ckpt != 'cnn3d':
+            raise ValueError(
+                f"Backbone de vídeo '{video_backbone_ckpt}' não é mais suportado; "
+                "o projeto usa apenas 'cnn3d'."
+            )
+        video_feature_dim = checkpoint.get('video_feature_dim') or 512
 
         model = create_multimodal_model(
             video_feature_dim=video_feature_dim,
@@ -215,32 +196,18 @@ def load_model(
             model.load_state_dict(checkpoint)
 
         # Backbone de vídeo para extrair o clip token dos frames do dataloader
-        if video_backbone_ckpt == "cnn3d":
-            vckpt_path = video_model_path or str(p.CNN3D_WEIGHTS / "best_model.pth")
-            vckpt = torch.load(vckpt_path, map_location=device)
-            vmodel_name = vckpt.get('model_name') or vckpt.get('backbone') or "r2plus1d_18"
-            video_model = create_cnn3d_model(
-                model_name=vmodel_name,
-                num_classes=2,
-                checkpoint_path=vckpt_path,
-                device=device
-            )
-        else:
-            vckpt_path = video_model_path or str(p.RESNET_LSTM_WEIGHTS / "best_model.pth")
-            video_model = create_video_model(
-                num_frames=16,
-                hidden_size=256,
-                num_layers=2,
-                dropout=0.3,
-                num_classes=2,
-                pretrained=True,
-                device=device
-            )
-            vckpt = torch.load(vckpt_path, map_location=device)
-            video_model.load_state_dict(vckpt.get('model_state_dict', vckpt))
+        vckpt_path = video_model_path or str(p.CNN3D_WEIGHTS / "best_model.pth")
+        vckpt = torch.load(vckpt_path, map_location=device)
+        vmodel_name = vckpt.get('model_name') or vckpt.get('backbone') or "r2plus1d_18"
+        video_model = create_cnn3d_model(
+            model_name=vmodel_name,
+            num_classes=2,
+            checkpoint_path=vckpt_path,
+            device=device
+        )
         video_model.eval()
 
-        model = _MultimodalEvalWrapper(model, video_model, video_backbone_ckpt)
+        model = _MultimodalEvalWrapper(model, video_model)
     
     elif model_type == "cnn3d":
         # Backbone selecionado pela metadata do checkpoint (model_name/backbone),
@@ -254,27 +221,14 @@ def load_model(
         )
     
     elif model_type == "video":
-        # Sub-modelo de vídeo: CNN3D (padrão) ou ResNet-LSTM avaliado standalone
-        if video_backbone == "cnn3d":
-            model_name = checkpoint.get('model_name') or checkpoint.get('backbone') or "r2plus1d_18"
-            model = create_cnn3d_model(
-                model_name=model_name,
-                num_classes=2,
-                checkpoint_path=model_path,
-                device=device
-            )
-        else:
-            model = create_video_model(
-                num_frames=16,
-                hidden_size=256,
-                num_layers=2,
-                dropout=0.3,
-                num_classes=2,
-                pretrained=True,
-                device=device
-            )
-            state_dict = checkpoint.get('model_state_dict', checkpoint)
-            model.load_state_dict(state_dict)
+        # Sub-modelo de vídeo: CNN 3D avaliado standalone
+        model_name = checkpoint.get('model_name') or checkpoint.get('backbone') or "r2plus1d_18"
+        model = create_cnn3d_model(
+            model_name=model_name,
+            num_classes=2,
+            checkpoint_path=model_path,
+            device=device
+        )
     
     elif model_type == "pose":
         # Sub-modelo de pose: branch de pose do multimodal, avaliado standalone.
@@ -319,10 +273,8 @@ def _resolve_sub_model_path(args, model_type: str) -> str:
         return explicit
 
     defaults = {
-        # video: CNN 3D (padrão) ou ResNet-LSTM, conforme --video_backbone
-        "video": (str(p.CNN3D_WEIGHTS / "best_model.pth")
-                  if getattr(args, "video_backbone", "cnn3d") == "cnn3d"
-                  else str(p.RESNET_LSTM_WEIGHTS / "best_model.pth")),
+        # video: CNN 3D
+        "video": str(p.CNN3D_WEIGHTS / "best_model.pth"),
         # pose: branch de pose do checkpoint multimodal (--model_path)
         "pose": args.model_path,
         # emotion: EmotionNet treinado
@@ -331,27 +283,18 @@ def _resolve_sub_model_path(args, model_type: str) -> str:
     return defaults[model_type]
 
 
-def _get_per_model_test_loader(model_type: str, batch_size: int, video_backbone: str = "cnn3d"):
+def _get_per_model_test_loader(model_type: str, batch_size: int):
     """
     Retorna (test_loader, class_names, num_classes) para um sub-modelo.
     """
     if model_type == "video":
-        if video_backbone == "cnn3d":
-            # Clipes 3D do RWF-2000 (permutação (B,T,C,H,W)->(B,C,T,H,W) no MetricsCalculator)
-            _, _, test_loader = get_rwf2000_3d_dataloaders(
-                dataset_root=str(p.RWF2000_ROOT),
-                batch_size=batch_size,
-                num_frames=16,
-                clip_size=(112, 112)
-            )
-        else:
-            # Frames processados (B, T, C, H, W) + label binário
-            _, _, test_loader = get_dataloaders(
-                processed_data_root=str(p.PROCESSED_ROOT),
-                batch_size=batch_size,
-                num_frames=16,
-                num_workers=0
-            )
+        # Clipes 3D do RWF-2000 (permutação (B,T,C,H,W)->(B,C,T,H,W) no MetricsCalculator)
+        _, _, test_loader = get_rwf2000_3d_dataloaders(
+            dataset_root=str(p.RWF2000_ROOT),
+            batch_size=batch_size,
+            num_frames=16,
+            clip_size=(112, 112)
+        )
         return test_loader, ["Non-Violent", "Violent"], 2
 
     if model_type == "pose":
@@ -486,11 +429,10 @@ def run_per_model_evaluation(args, device, targets: list = None):
 
             model = load_model(
                 model_type, model_path, device,
-                video_backbone=args.video_backbone,
                 video_model_path=args.video_model_path
             )
             test_loader, class_names, num_classes = _get_per_model_test_loader(
-                model_type, args.batch_size, video_backbone=args.video_backbone
+                model_type, args.batch_size
             )
 
             calculator = MetricsCalculator(
@@ -557,7 +499,7 @@ def main():
     parser.add_argument(
         "--model",
         type=str,
-        choices=["baseline", "cnn3d", "multimodal", "video", "pose", "emotion"],
+        choices=["cnn3d", "multimodal", "video", "pose", "emotion"],
         required=True,
         help="Tipo de modelo (video/pose/emotion = avaliação de sub-modelo)"
     )
@@ -576,17 +518,10 @@ def main():
     
     # Caminhos opcionais por sub-modelo (override dos defaults)
     parser.add_argument(
-        "--video_backbone",
-        type=str,
-        choices=["cnn3d", "resnet_lstm"],
-        default="cnn3d",
-        help="Backbone de vídeo para o sub-modelo video e para extrair features do multimodal (padrão: cnn3d)"
-    )
-    parser.add_argument(
         "--video_model_path",
         type=str,
         default="models/cnn3d/weights/best_model.pth",
-        help="Checkpoint do sub-modelo de vídeo (padrão: models/cnn3d/weights/best_model.pth se --video_backbone cnn3d)"
+        help="Checkpoint do sub-modelo de vídeo (padrão: models/cnn3d/weights/best_model.pth)"
     )
     parser.add_argument(
         "--pose_model_path",
@@ -666,7 +601,7 @@ def main():
     args = parser.parse_args()
     
     # Definir experimentos a executar
-    is_full_model = args.model in ("baseline", "cnn3d", "multimodal")
+    is_full_model = args.model in ("cnn3d", "multimodal")
     if args.all:
         run_metrics = True
         run_robustness = True
@@ -719,20 +654,13 @@ def main():
         print("Loading model...")
         model = load_model(
             args.model, args.model_path, args.device,
-            video_backbone=args.video_backbone,
             video_model_path=args.video_model_path
         )
         print("✓ Model loaded")
         
         # Carregar dataset
         print("Loading dataset...")
-        if args.model == "baseline":
-            _, _, test_loader = get_dataloaders(
-                processed_data_root=str(p.PROCESSED_ROOT),
-                batch_size=args.batch_size,
-                num_frames=16
-            )
-        elif args.model == "multimodal":
+        if args.model == "multimodal":
             _, _, test_loader = get_multimodal_dataloaders(
                 video_data_root=str(p.PROCESSED_ROOT),
                 pose_data_root=str(p.POSE_ROOT),
@@ -777,7 +705,7 @@ def main():
                 exp_label = "cnn3d"
             else:
                 output_root = p.EXPERIMENTS_ROOT / args.experiment_name
-                exp_label = "baseline" if args.model == "baseline" else "multimodal"
+                exp_label = "multimodal"
             output_path = output_root / "metrics"
             output_path.mkdir(parents=True, exist_ok=True)
             calculator.save_results(

@@ -6,7 +6,6 @@ Diretório contendo todos os modelos treinados do projeto, organizados por tipo.
 
 ```
 models/
-├── resnet_lstm/      # Modelo ResNet-18 + LSTM
 ├── emotion_cnn/      # Modelo DeiT para emoções
 ├── cnn3d/            # Modelo CNN 3D (R3D, R(2+1)D, MC3)
 └── multimodal/       # Modelo Multimodal
@@ -27,17 +26,17 @@ Esta estrutura é compatível com:
 
 ## Treinamento
 
-Use o script principal para treinar modelos:
+Cada modelo tem seu script de treinamento na raiz:
 
 ```bash
-# Treinar todos os modelos
-python train_pipeline.py --all
+# EmotionNet
+python train_emotion_model.py
 
-# Treinar modelos específicos
-python train_pipeline.py --resnet_lstm
-python train_pipeline.py --emotion
-python train_pipeline.py --cnn3d
-python train_pipeline.py --multimodal
+# CNN 3D
+python train_cnn3d.py
+
+# Multimodal
+python train_multimodal.py
 ```
 
 ## Paths no Código
@@ -45,9 +44,6 @@ python train_pipeline.py --multimodal
 Os paths são definidos em `src/paths.py`:
 
 ```python
-# ResNet-LSTM
-RESNET_LSTM_WEIGHTS = MODELS_BASE / "resnet_lstm" / "weights"
-
 # Emotion CNN
 EMOTION_CNN_WEIGHTS = MODELS_BASE / "emotion_cnn" / "weights"
 
