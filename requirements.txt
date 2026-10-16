@@ -11,3 +11,4 @@ facenet-pytorch>=2.5.0
 matplotlib>=3.7.0
 seaborn>=0.12.0
 psutil
+pytest>=8.0.0

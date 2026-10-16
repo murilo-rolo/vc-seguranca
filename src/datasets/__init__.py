@@ -13,6 +13,12 @@ from .paired_dataset import (
     get_paired_dataloaders,
     paired_root_exists,
 )
+from .affectnet_dataset import (
+    AffectNetDataset,
+    get_transforms,
+    resolve_affectnet_root,
+    resolve_affectnet_splits,
+)
 from src.preprocessing import load_index
 
 __all__ = [
@@ -25,5 +31,9 @@ __all__ = [
     "PairedSurveillanceDataset",
     "get_paired_dataloaders",
     "paired_root_exists",
+    "AffectNetDataset",
+    "get_transforms",
+    "resolve_affectnet_root",
+    "resolve_affectnet_splits",
     "load_index",
 ]

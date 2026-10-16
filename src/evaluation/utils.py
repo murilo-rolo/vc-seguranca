@@ -6,8 +6,7 @@ import cv2
 import numpy as np
 from pathlib import Path
 import json
-from typing import Dict, List, Optional
-import torch
+from typing import Dict
 
 
 def apply_resize(frame: np.ndarray, target_size: tuple) -> np.ndarray:
@@ -169,35 +168,12 @@ def apply_distortions(
         raise ValueError(f"Tipo de distorção não suportado: {distortion_type}")
 
 
-def save_results(
-    results: Dict,
-    output_path: Path,
-    format: str = "json"
-):
-    """
-    Salva resultados em arquivo.
-    
-    Args:
-        results: Dicionário com resultados
-        output_path: Caminho do arquivo
-        format: Formato ("json" ou "csv")
-    """
+def save_results(results: Dict, output_path: Path) -> None:
+    """Salva um dicionário de resultados como JSON (cria diretórios)."""
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    
-    if format == "json":
-        with open(output_path, 'w') as f:
-            json.dump(results, f, indent=2)
-    elif format == "csv":
-        import pandas as pd
-        # Assumir que results é uma lista de dicionários ou DataFrame
-        if isinstance(results, dict):
-            df = pd.DataFrame([results])
-        else:
-            df = pd.DataFrame(results)
-        df.to_csv(output_path, index=False)
-    else:
-        raise ValueError(f"Formato não suportado: {format}")
+    with open(output_path, "w") as f:
+        json.dump(results, f, indent=2)
 
 
 def load_results(input_path: Path) -> Dict:

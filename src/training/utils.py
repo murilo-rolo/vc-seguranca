@@ -1,26 +1,19 @@
 """
 Funções compartilhadas para treinamento de modelos.
 
-Centraliza loops de treino/validação e criação de DataLoaders
-para evitar duplicação entre scripts de treinamento.
+Centraliza o loop de treino/validação (run_epoch) e a criação de
+DataLoaders para evitar duplicação entre scripts de treinamento.
 """
+
+from typing import Callable, Optional
 
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset, Sampler
-from pathlib import Path
 from tqdm import tqdm
-from typing import Tuple, Optional, Callable
 
-
-def _to_device(x, device):
-    """Move recursivamente tensores (dentro de listas/tuplas) para o device."""
-    if isinstance(x, torch.Tensor):
-        return x.to(device)
-    if isinstance(x, (list, tuple)):
-        return type(x)(_to_device(item, device) for item in x)
-    return x
+from src.tensor_utils import move_to_device
 
 
 def run_epoch(
@@ -40,30 +33,19 @@ def run_epoch(
     Executa uma época de treino ou validação.
 
     Args:
-        model: Modelo a ser treinado/validado
-        loader: DataLoader
-        criterion: Função de loss
-        device: Device (cuda/cpu)
-        is_train: True para treino, False para validação
-        optimizer: Otimizador (obrigatório se is_train=True)
-        desc: Descrição para a barra de progresso
-        model_hook: Função opcional para pré-processar batch antes do forward.
-                    Recebe (batch) e retorna (inputs, labels).
-        scaler: GradScaler para mixed precision (opcional)
-        return_metrics: Se True, retorna também dict com F1, precision, recall, confusion_matrix
-        grad_clip: Valor máximo da norma L2 dos gradientes (opcional, ex: 1.0)
+        model_hook: pré-processa o batch e retorna (inputs, labels).
+        scaler: GradScaler para mixed precision.
+        return_metrics: retorna também dict com f1/precision/recall (macro)
+            e confusion_matrix (lista de listas).
+        grad_clip: norma máxima dos gradientes (None/0 = desativado).
 
     Returns:
-        Se return_metrics=False: Tupla (loss_média, accuracy)
-        Se return_metrics=True: Tupla (loss_média, accuracy, metrics_dict)
+        (loss, accuracy) ou (loss, accuracy, metrics).
     """
-    model.train() if is_train else model.eval()
+    model.train(is_train)
 
-    running_loss = 0.0
-    correct = 0
-    total = 0
-    all_labels = []
-    all_preds = []
+    running_loss, correct, total = 0.0, 0, 0
+    all_labels, all_preds = [], []
 
     with torch.set_grad_enabled(is_train):
         pbar = tqdm(loader, desc=desc)
@@ -77,17 +59,14 @@ def run_epoch(
                     "Batch não reconhecido. Use model_hook para extrair inputs/labels."
                 )
 
-            inputs = _to_device(inputs, device)
-            labels = _to_device(labels, device)
+            inputs = move_to_device(inputs, device)
+            labels = move_to_device(labels, device)
 
             if is_train:
                 optimizer.zero_grad()
 
             with torch.amp.autocast('cuda', enabled=scaler is not None):
-                if isinstance(inputs, (list, tuple)):
-                    outputs = model(*inputs)
-                else:
-                    outputs = model(inputs)
+                outputs = model(*inputs) if isinstance(inputs, (list, tuple)) else model(inputs)
                 loss = criterion(outputs, labels)
 
             if is_train:
@@ -115,24 +94,28 @@ def run_epoch(
             all_labels.extend(labels.cpu().tolist())
             all_preds.extend(predicted.cpu().tolist())
 
-            current_loss = running_loss / (pbar.n + 1)
-            current_acc = 100.0 * correct / total
-            pbar.set_postfix(loss=f"{current_loss:.4f}", acc=f"{current_acc:.2f}%")
+            pbar.set_postfix(
+                loss=f"{running_loss / (pbar.n + 1):.4f}",
+                acc=f"{100.0 * correct / total:.2f}%",
+            )
 
     epoch_loss = running_loss / len(loader)
     epoch_acc = 100.0 * correct / total
 
-    if return_metrics:
-        from sklearn.metrics import f1_score, precision_score, recall_score, confusion_matrix
-        metrics = {
-            'f1_score': float(f1_score(all_labels, all_preds, average='macro')),
-            'precision': float(precision_score(all_labels, all_preds, average='macro')),
-            'recall': float(recall_score(all_labels, all_preds, average='macro')),
-            'confusion_matrix': confusion_matrix(all_labels, all_preds, labels=range(8)).tolist(),
-        }
-        return epoch_loss, epoch_acc, metrics
+    if not return_metrics:
+        return epoch_loss, epoch_acc
 
-    return epoch_loss, epoch_acc
+    from sklearn.metrics import (
+        confusion_matrix, f1_score, precision_score, recall_score,
+    )
+    labels_idx = list(range(max(max(all_labels), max(all_preds)) + 1))
+    metrics = {
+        'f1_score': float(f1_score(all_labels, all_preds, average='macro', zero_division=0)),
+        'precision': float(precision_score(all_labels, all_preds, average='macro', zero_division=0)),
+        'recall': float(recall_score(all_labels, all_preds, average='macro', zero_division=0)),
+        'confusion_matrix': confusion_matrix(all_labels, all_preds, labels=labels_idx).tolist(),
+    }
+    return epoch_loss, epoch_acc, metrics
 
 
 def create_dataloader(
@@ -155,37 +138,3 @@ def create_dataloader(
         num_workers=num_workers,
         pin_memory=pin_memory,
     )
-
-
-def save_checkpoint(
-    state: dict,
-    output_path: Path,
-    filename: str = "best_model.pth",
-    history: Optional[dict] = None,
-):
-    """Salva checkpoint do modelo e opcionalmente histórico."""
-    output_path.mkdir(parents=True, exist_ok=True)
-
-    model_path = output_path / filename
-    torch.save(state, model_path)
-    print(f"  Modelo salvo em: {model_path}")
-
-    if history:
-        import json
-        history_path = output_path / "training_history.json"
-        with open(history_path, "w") as f:
-            json.dump(history, f, indent=2)
-
-
-def setup_device(device: Optional[str] = None) -> torch.device:
-    """Configura e retorna o device."""
-    if device is None:
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-    return torch.device(device)
-
-
-def set_seed(seed: int = 42):
-    """Configura seed para reprodutibilidade."""
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)

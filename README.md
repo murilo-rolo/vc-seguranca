@@ -53,7 +53,8 @@ Este projeto está sendo desenvolvido como parte de um projeto de pesquisa em Vi
 - **Impact Study Cross-Label**: O split de teste do dataset pareado contém 4 células de mesmo tamanho (violent/non_violent × face violent/non_violent) para medir o impacto da modalidade de emoção na classificação
 - **Treinamento Robusto do EmotionNet**: Focal Loss, WeightedRandomSampler, warmup + cosine annealing, early stopping e resume de treino
 - **Download Automático de Datasets**: `download_datasets.py` baixa RWF-2000 e AffectNet via Kaggle API
-- **Código modular**: Funções de treino/validação centralizadas em `src/training/utils.py`
+- **Código modular**: Loop de treino em `src/training/loop.py`, datasets em `src/datasets/`, inferência de avaliação em `src/evaluation/inference.py`
+- **Config única de treino**: `configs/treino.toml` centraliza os hiperparâmetros dos 3 modelos (CLI mínimo: `--config`, `--device`, `--epochs`, `--resume`)
 - **Gerenciamento Centralizado de Caminhos**: `src/paths.py` detecta automaticamente o ambiente (local ou Google Colab) e configura todos os diretórios do projeto
 - **Organização de Modelos por Pasta**: Pesos e experimentos organizados em `models/<modelo>/weights/` e `models/<modelo>/experiments/`
 
@@ -164,7 +165,7 @@ Modelo baseado em **DeiT-Small** (Data-efficient Image Transformer) para classif
 
 **Técnicas de treinamento:**
 - **Focal Loss** (γ configurável) para lidar com desbalanceamento de classes
-- **WeightedRandomSampler** opcional via `--balance-classes` (OFF por padrão — o balanced-affectnet já é balanceado)
+- **WeightedRandomSampler** opcional via `balance_classes = true` no `configs/treino.toml` (OFF por padrão — o balanced-affectnet já é balanceado)
 - **AdamW** com warmup linear + cosine annealing
 - **Mixed precision (AMP)**, gradient clipping e early stopping
 - Suporte a `--resume` para retomar treino do último checkpoint
@@ -469,72 +470,66 @@ O projeto oferece múltiplos scripts de treinamento para diferentes modelos:
 
 #### 2.1. Treinamento EmotionNet
 
-Treina o modelo de reconhecimento de emoções (DeiT-Small) no Balanced-AffectNet:
+Treina o modelo de reconhecimento de emoções (DeiT-Small) no Balanced-AffectNet. Os hiperparâmetros vêm de `configs/treino.toml` (seção `[emotion]`):
 
 ```bash
-python train_emotion_model.py \
-    --epochs 60 \
-    --batch_size 32 \
-    --learning_rate 1e-5
+# Usa configs/treino.toml
+python train_emotion_model.py
+
+# Overrides pontuais na linha de comando
+python train_emotion_model.py --epochs 5 --device cpu
+
+# Outro arquivo de configuração
+python train_emotion_model.py --config outro.toml
+
+# Retomar do último best_model.pth
+python train_emotion_model.py --resume
 ```
 
-**Opções principais:**
-- `--epochs`: Número de épocas (padrão: 60)
-- `--batch_size`: Tamanho do batch (padrão: 32)
-- `--learning_rate`: Learning rate (padrão: 1e-5)
-- `--dataset_path`: Caminho do dataset de emoção (padrão: `dataset/balanced-affectnet`; fallback: `dataset/AffectNet`)
-- `--balance-classes`: Usa WeightedRandomSampler para balancear os batches (**OFF por padrão** — o dataset já é balanceado)
-- `--min_confidence`: Confiança mínima do label no `labels.csv` (padrão: 0.7; **aplica-se apenas a datasets CSV legados**)
-- `--focal-gamma`: Gamma da Focal Loss (padrão: 2)
-- `--weight_decay`: Weight decay do AdamW (padrão: 0.05)
-- `--warmup_epochs`: Épocas de warmup linear (padrão: 5)
-- `--grad-clip`: Gradient clipping max norm (padrão: 1.0; `0` desativa)
+**CLI (mínimo):**
+- `--config`: Arquivo TOML com hiperparâmetros (padrão: `configs/treino.toml`)
+- `--device`: Device para treinamento
+- `--epochs`: Sobrescreve `epochs` do arquivo de configuração
 - `--resume`: Retoma o treino a partir do último `best_model.pth`
-- `--amp` / `--no-amp`: Ativa/desativa mixed precision
+
+**Hiperparâmetros (`[emotion]` no TOML):** `batch_size`, `learning_rate`, `weight_decay`, `warmup_epochs`, `early_stop_patience`, `focal_gamma`, `grad_clip`, `balance_classes`, `amp`, `min_confidence`, `num_workers`, `dataset_path`.
 
 O dataset de emoção é localizado automaticamente em `dataset/balanced-affectnet` (splits `train`/`val`; se ausente, o AffectNet legado em `dataset/AffectNet` é usado como fallback). O modelo é salvo em `models/emotion_cnn/weights/best_model.pth`.
 
+> **Config única:** os três scripts de treino (`train_emotion_model.py`, `train_cnn3d.py`, `train_multimodal.py`) leem `configs/treino.toml`. A configuração efetiva (defaults < TOML < overrides de CLI) é gravada em `training_history.json` e na chave `hyperparameters` do `best_model.pth`. Chaves desconhecidas no TOML abortam o treino.
+
 #### 2.2. Treinamento CNN 3D em RWF-2000 (2 classes)
 
-O backbone é pré-treinado no **Kinetics400** (carregado automaticamente via torchvision) e o script faz o fine-tuning em RWF-2000:
+O backbone é pré-treinado no **Kinetics400** (carregado automaticamente via torchvision) e o script faz o fine-tuning em RWF-2000. Hiperparâmetros em `[cnn3d]` no `configs/treino.toml`:
 
 ```bash
-python train_cnn3d.py \
-    --epochs 30 \
-    --batch_size 8
+python train_cnn3d.py
+python train_cnn3d.py --epochs 30 --device cuda
 ```
 
-**Opções principais:**
-- `--model_name`: `r3d_18`, `r2plus1d_18` (padrão) ou `mc3_18`
-- `--freeze_backbone`: Congela o backbone durante o fine-tuning (treina apenas o classifier)
-- `--clip_size`: Tamanho do clipe H W (padrão: `112 112`)
+**Hiperparâmetros (`[cnn3d]`):** `batch_size`, `learning_rate`, `num_workers`, `model_name` (`r3d_18`, `r2plus1d_18` padrão, `mc3_18`), `freeze_backbone`, `num_frames`, `clip_size`, `dropout`.
 
 Os pesos são salvos em `models/cnn3d/weights/best_model.pth`.
 
 #### 2.3. Treinamento Multimodal (Modelo Principal)
 
-Treina o modelo multimodal completo combinando vídeo, pose e emoção:
+Treina o modelo multimodal completo combinando vídeo, pose e emoção. Hiperparâmetros em `[multimodal]` no `configs/treino.toml`:
 
 ```bash
-python train_multimodal.py \
-    --epochs 50 \
-    --batch_size 8 \
-    --use_temporal_modeling
+python train_multimodal.py
+python train_multimodal.py --epochs 50 --device cuda
 ```
 
-**Parâmetros principais:**
-- `--use_temporal_modeling`: Usa LSTM para modelagem temporal de pose e emoção
-- `--video_model_path`: Caminho para o checkpoint do backbone de vídeo CNN 3D
-- `--window_size`: Tamanho da janela temporal (padrão: 16)
+**Hiperparâmetros (`[multimodal]`):** `batch_size`, `learning_rate`, `num_workers`, `num_frames`, `window_size`, `use_temporal_modeling` (LSTM para pose e emoção), `video_model_path` (checkpoint do backbone CNN 3D).
 
 A fusão é sempre **cross-attention** (sem flag `--fusion_method`). O checkpoint salva `fusion_method=cross_attention`, `emotion_feature_dim=128`, `video_backbone` e `video_feature_dim` (512), usados automaticamente na inferência e avaliação.
 
 O modelo é salvo em `models/multimodal/weights/best_model.pth`.
 
 **Dicas para computadores com poucos recursos:**
-- Use `--batch_size 4` ou `--batch_size 2` para reduzir uso de memória
-- Use `--num_workers 0` ou `--num_workers 2` para reduzir uso de CPU
-- Use `--num_epochs 10` para testes rápidos
+- Reduza `batch_size` e `num_workers` em `configs/treino.toml` (ou crie um TOML próprio)
+- Reduza `num_frames` para 8 em `[cnn3d]`/`[multimodal]`
+- Use `--epochs 10` para testes rápidos
 - Use `--device cpu` se tiver problemas com GPU
 
 ### 3. Avaliação
@@ -850,24 +845,37 @@ vc-seguranca/
 │   │   ├── emotion_dataset.py
 │   │   └── neutral_embedding.py
 │   ├── datasets/              # Datasets e DataLoaders
+│   │   ├── affectnet_dataset.py # Dataset de emoção (balanced-affectnet)
 │   │   ├── surveillance_dataset.py
 │   │   ├── multimodal_dataset.py
 │   │   ├── paired_dataset.py    # Dataset pareado (lê dataset/paired/)
 │   │   └── video3d_dataset.py
 │   ├── models/                # Modelos de Deep Learning
+│   │   ├── checkpoints.py     # extract_state_dict / load_state (checkpoints)
 │   │   ├── cnn3d_risk.py      # CNN 3D
 │   │   ├── emotion_cnn.py     # EmotionNet (DeiT-Small)
 │   │   ├── multimodal_risk.py # MultimodalRiskDetector
 │   │   └── losses.py          # Focal Loss
-│   ├── training/              # Scripts de treinamento
+│   ├── training/              # Treinamento
+│   │   ├── config.py          # Carregamento/validação do TOML de hiperparâmetros
+│   │   ├── loop.py            # Loop de treino compartilhado (scheduler, early stop)
 │   │   └── utils.py           # Funções compartilhadas (run_epoch, dataloader, etc.)
+│   ├── tensor_utils.py        # move_to_device (compartilhado treino/avaliação)
 │   ├── evaluation/            # Avaliação experimental
+│   │   ├── inference.py       # Loop de inferência compartilhado (collect_predictions)
+│   │   ├── model_loading.py   # Carregamento de checkpoints (load_model, PoseSubModel, build_roc_pr)
+│   │   ├── dataloaders.py     # DataLoaders de teste (sub-modelos e modelos completos)
+│   │   ├── per_model.py       # Avaliação por sub-modelo (video/pose/emotion)
+│   │   ├── cross_label.py     # Cenários cross-label, relatório e gráficos
 │   │   ├── metrics.py         # Métricas básicas (acc, precision, AUC-ROC, PR)
 │   │   ├── robustness_eval.py # Robustez a distorções
 │   │   ├── performance_eval.py# Performance (FPS, latência)
 │   │   ├── limitations_analysis.py # FPs, FNs, casos limítrofes
-│   │   ├── ablation_study.py  # Estudo de ablação
+│   │   ├── ablation_study.py  # Estudo de impacto (ImpactStudy)
+│   │   ├── charts.py          # Gráficos padronizados (generate_report)
 │   │   └── utils.py           # Aplicação de distorções e utilitários
+├── configs/
+│   └── treino.toml            # Hiperparâmetros de treino (fonte única dos 3 modelos)
 ├── results/                   # Resultados de experimentos
 │   ├── experiments/           # Resultados do run_evaluation.py
 │   ├── comparison/            # Comparação baseline vs multimodal

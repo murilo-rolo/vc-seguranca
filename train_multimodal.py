@@ -1,23 +1,30 @@
 """
 Script de treinamento para modelo multimodal de detecção de risco.
+
+Hiperparâmetros: configs/treino.toml (seção [multimodal]).
+
+Uso:
+    python train_multimodal.py
+    python train_multimodal.py --epochs 10 --device cpu
 """
 
 import argparse
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from pathlib import Path
-import json
 
-from src.models.multimodal_risk import create_multimodal_model
-from src.models.cnn3d_risk import create_cnn3d_model
-from src.datasets.multimodal_dataset import get_multimodal_dataloaders
-from src.training.utils import run_epoch
 from src import paths as p
+from src.datasets.multimodal_dataset import get_multimodal_dataloaders
+from src.models.cnn3d_risk import create_cnn3d_model, ensure_channels_first
+from src.models.multimodal_risk import create_multimodal_model
+from src.training.config import add_config_args, resolve_config
+from src.training.loop import train_loop
 
 
-class _MultimodalWrapper(nn.Module):
-    """Wrapper que encapsula extração de features de vídeo + forward multimodal."""
+class MultimodalWithVideoBackbone(nn.Module):
+    """Encapsula extração de features de vídeo (CNN 3D) + forward multimodal."""
+
     def __init__(self, multimodal_model, video_model):
         super().__init__()
         self.multimodal = multimodal_model
@@ -25,202 +32,118 @@ class _MultimodalWrapper(nn.Module):
 
     def forward(self, video, pose, emotion):
         with torch.no_grad():
-            if len(video.shape) == 5:
-                # Frames chegam em frame-last (B, T, C, H, W); CNN3D espera (B, C, T, H, W)
-                video = video.permute(0, 2, 1, 3, 4)
-                video_features = self.video_model.get_features(video)  # (B, D_v) clip token
-            else:
-                video_features = video
-        return self.multimodal(video_features, pose, emotion)
+            if video.dim() == 5:
+                video = self.video_model.get_features(ensure_channels_first(video))
+        return self.multimodal(video, pose, emotion)
 
 
 def _multimodal_hook(batch):
     return (batch[0], batch[1], batch[2]), batch[3]
 
 
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Treinar modelo multimodal de detecção de risco (configs/treino.toml)"
+    )
+    add_config_args(parser)
+    return parser
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Treinar modelo multimodal de detecção de risco")
-    
-    # Modelo
-    parser.add_argument(
-        "--use_temporal_modeling",
-        action="store_true",
-        help="Usar LSTM para modelagem temporal por modalidade"
-    )
-    parser.add_argument(
-        "--video_model_path",
-        type=str,
-        default=None,
-        help="Caminho para o checkpoint do backbone de vídeo CNN 3D"
-    )
-    
-    # Treinamento
-    parser.add_argument(
-        "--epochs",
-        type=int,
-        default=50,
-        help="Número de épocas"
-    )
-    parser.add_argument(
-        "--batch_size",
-        type=int,
-        default=16,
-        help="Tamanho do batch"
-    )
-    parser.add_argument(
-        "--learning_rate",
-        type=float,
-        default=1e-4,
-        help="Learning rate"
-    )
-    parser.add_argument(
-        "--num_frames",
-        type=int,
-        default=16,
-        help="Número de frames por vídeo"
-    )
-    parser.add_argument(
-        "--window_size",
-        type=int,
-        default=16,
-        help="Tamanho da janela temporal"
-    )
-    
-    # Outros
-    parser.add_argument(
-        "--num_workers",
-        type=int,
-        default=4,
-        help="Número de workers para DataLoader"
-    )
-    parser.add_argument(
-        "--device",
-        type=str,
-        default="cuda" if torch.cuda.is_available() else "cpu",
-        help="Device para treinamento"
-    )
-    
-    args = parser.parse_args()
-    
-    # Criar diretórios de saída (nova estrutura)
+    args = build_parser().parse_args()
+    cfg = resolve_config("multimodal", args)
+
     output_dir = p.MULTIMODAL_WEIGHTS
-    output_dir.mkdir(parents=True, exist_ok=True)
     experiments_dir = p.MULTIMODAL_EXPERIMENTS
-    experiments_dir.mkdir(parents=True, exist_ok=True)
-    
-    device = torch.device(args.device)
-    
-    # Carregar modelo de vídeo (para extrair features)
-    print("Carregando modelo de vídeo...")
-    if not args.video_model_path:
-        parser.error("--video_model_path (checkpoint CNN 3D) é obrigatório")
-    video_checkpoint = torch.load(args.video_model_path, map_location=device)
-    model_name = video_checkpoint.get('model_name') or video_checkpoint.get('backbone') or "r2plus1d_18"
-    video_model = create_cnn3d_model(
-        model_name=model_name,
-        num_classes=2,
-        checkpoint_path=args.video_model_path,
-        num_frames=args.num_frames,
-        device=args.device
-    )
-    video_feature_dim = video_model.feature_dim  # 512
-    print(f"Modelo de vídeo CNN 3D ({model_name}) carregado de: {args.video_model_path}")
-    
-    # Criar modelo multimodal com wrapper
-    print("Criando modelo multimodal...")
-    multimodal_model = create_multimodal_model(
-        video_feature_dim=video_feature_dim, pose_feature_dim=51, emotion_feature_dim=128,
-        num_frames=args.window_size, fusion_method="cross_attention",
-        use_temporal_modeling=args.use_temporal_modeling, device=args.device
-    )
-    model = _MultimodalWrapper(multimodal_model, video_model).to(device)
-
-    print("Criando DataLoaders...")
-    from src.datasets.paired_dataset import get_paired_dataloaders, paired_root_exists
-    if paired_root_exists():
-        print(f"✓ Dataset pareado: {p.PAIRED_ROOT}")
-        train_loader, val_loader, test_loader = get_paired_dataloaders(
-            batch_size=args.batch_size,
-            num_frames=args.num_frames, window_size=args.window_size,
-            video_mode="frames", pose_mode="flatten",
-            num_workers=args.num_workers,
-        )
-    else:
-        print("⚠️  dataset/paired não encontrado — usando CSV legado "
-              "(gerar com: python -m src.preprocessing.build_paired_dataset)")
-        train_loader, val_loader, test_loader = get_multimodal_dataloaders(
-            video_data_root=str(p.PROCESSED_ROOT), pose_data_root=str(p.POSE_ROOT),
-            emotion_data_root=str(p.EMOTION_ROOT), batch_size=args.batch_size,
-            num_frames=args.num_frames, window_size=args.window_size,
-            video_mode="frames", pose_mode="flatten",
-            num_workers=args.num_workers, dataset_name="rwf2000",
-            index_csv=str(p.PIPELINE_CSV_PATH) if p.PIPELINE_CSV_PATH.exists() else None,
-        )
-
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(multimodal_model.parameters(), lr=args.learning_rate)
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=15, gamma=0.1)
-
-    best_val_acc = 0.0
-    history = {'train_loss': [], 'train_acc': [], 'val_loss': [], 'val_acc': []}
 
     print("=" * 60)
     print("Treinamento do Modelo Multimodal")
     print("=" * 60)
     print(f"Fusion method: cross_attention")
-    print(f"Video backbone: cnn3d ({video_feature_dim} dims)")
-    print(f"Temporal modeling: {args.use_temporal_modeling}")
-    print(f"Device: {args.device}")
-    print(f"Épocas: {args.epochs}")
-    print(f"Batch size: {args.batch_size}")
-    print(f"Learning rate: {args.learning_rate}")
+    print(f"Temporal modeling: {cfg['use_temporal_modeling']}")
+    print(f"Device: {cfg['device']} | Épocas: {cfg['epochs']} | "
+          f"Batch: {cfg['batch_size']} | LR: {cfg['learning_rate']}")
     print("=" * 60)
-    print()
 
-    for epoch in range(1, args.epochs + 1):
-        train_loss, train_acc = run_epoch(
-            model, train_loader, criterion, device,
-            is_train=True, optimizer=optimizer,
-            desc=f"Epoch {epoch} [Train]",
-            model_hook=_multimodal_hook
+    print("Carregando modelo de vídeo...")
+    video_model = create_cnn3d_model(
+        num_classes=2,
+        checkpoint_path=cfg["video_model_path"],
+        num_frames=cfg["num_frames"],
+        device=cfg["device"],
+    )
+    video_model.eval()
+    print(f"Modelo de vídeo CNN 3D carregado de: {cfg['video_model_path']}")
+
+    print("Criando modelo multimodal...")
+    multimodal_model = create_multimodal_model(
+        video_feature_dim=video_model.feature_dim,
+        pose_feature_dim=51,
+        emotion_feature_dim=128,
+        num_frames=cfg["window_size"],
+        fusion_method="cross_attention",
+        use_temporal_modeling=cfg["use_temporal_modeling"],
+        device=cfg["device"],
+    )
+    model = MultimodalWithVideoBackbone(multimodal_model, video_model).to(
+        torch.device(cfg["device"])
+    )
+
+    print("Criando DataLoaders...")
+    from src.datasets.paired_dataset import get_paired_dataloaders, paired_root_exists
+    if paired_root_exists():
+        print(f"✓ Dataset pareado: {p.PAIRED_ROOT}")
+        train_loader, val_loader, _ = get_paired_dataloaders(
+            batch_size=cfg["batch_size"],
+            num_frames=cfg["num_frames"],
+            window_size=cfg["window_size"],
+            video_mode="frames",
+            pose_mode="flatten",
+            num_workers=cfg["num_workers"],
         )
-        val_loss, val_acc = run_epoch(
-            model, val_loader, criterion, device,
-            is_train=False, desc=f"Epoch {epoch} [Val]",
-            model_hook=_multimodal_hook
+    else:
+        print("⚠️  dataset/paired não encontrado — usando CSV legado "
+              "(gerar com: python -m src.preprocessing.build_paired_dataset)")
+        train_loader, val_loader, _ = get_multimodal_dataloaders(
+            video_data_root=str(p.PROCESSED_ROOT),
+            pose_data_root=str(p.POSE_ROOT),
+            emotion_data_root=str(p.EMOTION_ROOT),
+            batch_size=cfg["batch_size"],
+            num_frames=cfg["num_frames"],
+            window_size=cfg["window_size"],
+            video_mode="frames",
+            pose_mode="flatten",
+            num_workers=cfg["num_workers"],
+            dataset_name="rwf2000",
+            index_csv=str(p.PIPELINE_CSV_PATH) if p.PIPELINE_CSV_PATH.exists() else None,
         )
 
-        scheduler.step()
-        history['train_loss'].append(train_loss)
-        history['train_acc'].append(train_acc)
-        history['val_loss'].append(val_loss)
-        history['val_acc'].append(val_acc)
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(multimodal_model.parameters(), lr=cfg["learning_rate"])
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=15, gamma=0.1)
 
-        if val_acc > best_val_acc:
-            best_val_acc = val_acc
-            torch.save({
-                'epoch': epoch, 'model_state_dict': multimodal_model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'val_acc': val_acc, 'val_loss': val_loss,
-                'fusion_method': 'cross_attention',
-                'use_temporal_modeling': args.use_temporal_modeling,
-                'emotion_feature_dim': multimodal_model.emotion_feature_dim,
-                'video_feature_dim': video_feature_dim,
-                'video_backbone': 'cnn3d'
-            }, output_dir / 'best_model.pth')
-            print(f"\n✓ Melhor modelo salvo! Val Acc: {val_acc:.2f}%")
-        print()
-
-    with open(experiments_dir / 'training_history.json', 'w') as f:
-        json.dump(history, f, indent=2)
+    best_val_acc, _ = train_loop(
+        model, train_loader, val_loader,
+        criterion=criterion, optimizer=optimizer, scheduler=scheduler,
+        device=torch.device(cfg["device"]), epochs=cfg["epochs"],
+        output_dir=output_dir, experiments_dir=experiments_dir,
+        model_hook=_multimodal_hook, config=cfg,
+        checkpoint_model=multimodal_model,
+        checkpoint_extra={
+            "fusion_method": "cross_attention",
+            "use_temporal_modeling": cfg["use_temporal_modeling"],
+            "emotion_feature_dim": multimodal_model.emotion_feature_dim,
+            "video_feature_dim": multimodal_model.video_feature_dim,
+            "video_backbone": "cnn3d",
+        },
+    )
 
     print("=" * 60)
     print("Treinamento concluído!")
     print(f"Melhor Val Acc: {best_val_acc:.2f}%")
-    print(f"Modelo salvo em: {p.MULTIMODAL_WEIGHTS / 'best_model.pth'}")
+    print(f"Modelo salvo em: {output_dir / 'best_model.pth'}")
     print("=" * 60)
 
 
 if __name__ == "__main__":
     main()
-

@@ -40,6 +40,53 @@ def _bar_value(metrics: Dict, key: str, which: str = "macro"):
     return value
 
 
+def plot_confusion_matrix(
+    cm,
+    class_names: List[str],
+    output_path,
+    title: Optional[str] = None,
+) -> Path:
+    """
+    Heatmap de uma confusion matrix (lista/lista numpy) com anotações.
+
+    Função única usada por treino e avaliação (substitui as várias
+    implementações de heatmap espalhadas pelo projeto).
+    """
+    cm = np.asarray(cm)
+    n = cm.shape[0]
+    labels = list(class_names) if len(class_names) == n else [f"C{i}" for i in range(n)]
+
+    fig, ax = plt.subplots(figsize=(10, 8))
+    im = ax.imshow(cm, interpolation="nearest", cmap=plt.cm.Blues)
+    fig.colorbar(im, ax=ax)
+    ax.set(
+        xticks=np.arange(n),
+        yticks=np.arange(n),
+        xticklabels=labels,
+        yticklabels=labels,
+        xlabel="Predicted",
+        ylabel="True",
+        title=title or "Confusion Matrix",
+    )
+    plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
+
+    thresh = cm.max() / 2.0 if cm.size else 0.0
+    for i in range(n):
+        for j in range(n):
+            ax.text(
+                j, i, format(int(cm[i, j]), "d"),
+                ha="center", va="center",
+                color="white" if cm[i, j] > thresh else "black",
+            )
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    return output_path
+
+
 def _save(fig, out_dir: Path, name: str) -> Path:
     """Salva a figura e devolve o caminho do arquivo criado."""
     out_dir.mkdir(parents=True, exist_ok=True)

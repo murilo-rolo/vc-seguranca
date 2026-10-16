@@ -1,597 +1,179 @@
 """
 Script de treinamento para modelo de Emotion Recognition no dataset AffectNet.
 
-Arquitetura: DeiT-Small (Data-efficient Image Transformer) pré-treinada no ImageNet,
-adaptada para classificação binária: violent / non_violent.
+Arquitetura: DeiT-Small pré-treinada no ImageNet, classificação binária
+violent / non_violent.
+
+Hiperparâmetros: configs/treino.toml (seção [emotion]).
+
+Uso:
+    python train_emotion_model.py
+    python train_emotion_model.py --epochs 5 --device cpu
+    python train_emotion_model.py --resume
 """
 
 import argparse
-import csv
-import json
+
 import numpy as np
 import torch
 import torch.optim as optim
-from torch.utils.data import Dataset, WeightedRandomSampler
-from torchvision import transforms
-from pathlib import Path
-from PIL import Image
-from typing import Optional, List, Tuple
+from torch.utils.data import WeightedRandomSampler
 
+from src import paths as p
+from src.datasets.affectnet_dataset import (
+    AffectNetDataset,
+    get_transforms,
+    resolve_affectnet_root,
+    resolve_affectnet_splits,
+)
+from src.evaluation.charts import plot_confusion_matrix
 from src.models.emotion_cnn import create_emotion_model
 from src.models.losses import FocalLoss
-from src.training.utils import run_epoch, create_dataloader
-from src import paths as p
-
-# Mapeamento de classes AffectNet
-AFFECTNET_CLASSES = {
-    'violent': 0,
-    'non_violent': 1
-}
+from src.training.config import add_config_args, resolve_config
+from src.training.loop import train_loop
+from src.training.utils import create_dataloader
 
 
-def resolve_affectnet_root(dataset_path: Optional[str] = None) -> Path:
-    """Resolve a raiz do dataset de emoção (preferência: balanced-affectnet).
-
-    `dataset/balanced-affectnet/` é o layout baixado por
-    `download_datasets.py --affectnet` (pastas por classe, splits
-    `train`/`val`/`test`, sem `labels.csv`). O AffectNet legado
-    (`dataset/AffectNet/` com `labels.csv` + `Train`/`Test`) continua
-    suportado como fallback.
-    """
-    if dataset_path is not None:
-        return Path(dataset_path)
-    if (p.DATASET_ROOT / "balanced-affectnet").exists():
-        return p.DATASET_ROOT / "balanced-affectnet"
-    return p.AFFECTNET_ROOT
-
-
-def resolve_affectnet_splits(root: Path) -> Tuple[str, str]:
-    """Splits (treino, validação) conforme o layout do dataset de emoção."""
-    if (root / "train").is_dir():
-        return "train", "val"
-    return "Train", "Test"
-
-
-class AffectNetDataset(Dataset):
-    """
-    Dataset para AffectNet.
-    
-    Usa labels.csv como fonte oficial de ground truth (coluna 'label'),
-    com fallback para labels por pasta caso o CSV não exista.
-
-    Estrutura esperada (CSV mode, AffectNet legado):
-    dataset/AffectNet/
-    ├── labels.csv
-    ├── Train/
-    │   ├── neutral/
-    │   ├── happy/
-    │   └── ...
-    └── Test/
-        └── ...
-
-    Estrutura esperada (folder mode, balanced-affectnet):
-    dataset/balanced-affectnet/
-    ├── train/violent/*.png
-    ├── val/violent/*.png
-    ├── test/violent/*.png
-    ├── train/non_violent/*.png
-    ├── val/non_violent/*.png
-    └── test/non_violent/*.png
-
-    No folder mode a lista de classes é derivada das pastas
-    "violent" e "non_violent" do split (ordenadas);
-    labels = índice nessa lista. `min_confidence` só se aplica ao CSV mode.
-    """
-    
-    def __init__(
-        self,
-        data_root: Path,
-        split: str = "Train",
-        transform: Optional[transforms.Compose] = None,
-        min_confidence: float = 0.0
-    ):
-        """
-        Inicializa o dataset AffectNet.
-        
-        Args:
-            data_root: Raiz do dataset AffectNet
-            split: "Train" ou "Test"
-            transform: Transformações a aplicar
-            min_confidence: Confiança mínima do label no CSV (0.0 = usa todos)
-        """
-        self.data_root = Path(data_root)
-        self.split = split
-        self.transform = transform
-        self.min_confidence = min_confidence
-        
-        csv_path = self.data_root / 'labels.csv'
-        if csv_path.exists():
-            self.class_to_idx = AFFECTNET_CLASSES.copy()
-            self.idx_to_class = {v: k for k, v in self.class_to_idx.items()}
-            self.class_names = list(self.class_to_idx.keys())
-            self.samples = self._load_from_csv(csv_path)
-            source = "CSV"
-        else:
-            print("⚠️  labels.csv não encontrado. Usando labels por pasta (folders).")
-            # Lista de classes DERIVADA das pastas reais do split (ordenada),
-            # com fallback para a lista canônica quando não há pastas.
-            class_names = self._derive_class_names_from_folders()
-            if class_names is None:
-                class_names = list(AFFECTNET_CLASSES.keys())
-                print("  ⚠️  Nenhuma pasta de classe encontrada; usando AFFECTNET_CLASSES como fallback.")
-            self.class_names = class_names
-            self.class_to_idx = {name: idx for idx, name in enumerate(class_names)}
-            self.idx_to_class = {v: k for k, v in self.class_to_idx.items()}
-            self.samples = self._load_from_folders()
-            source = "pastas"
-        
-        print(f"AffectNet {split}: {len(self.samples)} amostras carregadas ({source})")
-        if len(self.samples) == 0:
-            print(f"  ⚠️  Nenhuma imagem encontrada em {self.data_root / split}/")
-            print(f"      Verifique se o dataset foi baixado em: {self.data_root}")
-        else:
-            class_counts = {}
-            for _, label in self.samples:
-                class_counts[label] = class_counts.get(label, 0) + 1
-            print(f"  Distribuição: {', '.join(f'{self.idx_to_class[k]}: {v}' for k, v in sorted(class_counts.items()))}")
-    
-    def _derive_class_names_from_folders(self) -> Optional[List[str]]:
-        """
-        Deriva a lista de classes das pastas reais do split (ordenadas).
-
-        Labels no modo folders = índice nessa lista derivada; nomes de exibição
-        = nomes das pastas. Retorna None se o split não existe ou não tem pastas.
-        """
-        split_dir = self.data_root / self.split
-        if not split_dir.exists():
-            return None
-        folders = sorted([d.name for d in split_dir.iterdir() if d.is_dir()])
-        if not folders:
-            return None
-        return folders
-
-    def _load_from_csv(self, csv_path: Path) -> List[Tuple[Path, int]]:
-        samples = []
-        split_dir = self.data_root / self.split
-        
-        with open(csv_path, 'r') as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                relFCs = float(row['relFCs'])
-                if relFCs < self.min_confidence:
-                    continue
-                
-                img_path = split_dir / row['pth']
-                if not img_path.exists():
-                    continue
-                
-                label = self.class_to_idx.get(row['label'])
-                if label is None:
-                    continue
-                
-                samples.append((img_path, label))
-        
-        return samples
-    
-    def _load_from_folders(self) -> List[Tuple[Path, int]]:
-        samples = []
-        split_dir = self.data_root / self.split
-        
-        for class_name, class_idx in self.class_to_idx.items():
-            class_dir = split_dir / class_name
-            if not class_dir.exists():
-                class_dir = split_dir / class_name.capitalize()
-            
-            if class_dir.exists():
-                for ext in ['.jpg', '.jpeg', '.png']:
-                    for img_path in class_dir.glob(f"*{ext}"):
-                        samples.append((img_path, class_idx))
-        
-        return samples
-    
-    def __len__(self):
-        return len(self.samples)
-    
-    def __getitem__(self, idx):
-        img_path, label = self.samples[idx]
-        
-        try:
-            image = Image.open(img_path).convert('RGB')
-        except Exception:
-            image = Image.new('RGB', (224, 224), (0, 0, 0))
-        
-        if self.transform:
-            image = self.transform(image)
-        
-        return image, torch.tensor(label, dtype=torch.long)
-
-
-def get_transforms(is_train: bool = True):
-    if is_train:
-        aug_list = [
-            transforms.Resize((256, 256)),
-            transforms.RandomRotation(degrees=10),
-            transforms.RandomCrop(224),
-            transforms.RandomHorizontalFlip(p=0.5),
-            transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
-        ]
-        try:
-            from torchvision.transforms import RandAugment
-            aug_list.insert(0, RandAugment(num_ops=2, magnitude=9))
-        except ImportError:
-            pass
-        aug_list += [
-            transforms.ToTensor(),
-            transforms.RandomErasing(p=0.25),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-        ]
-        return transforms.Compose(aug_list)
-    else:
-        return transforms.Compose([
-            transforms.Resize((224, 224)),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-        ])
-
-
-
-
-
-def _plot_confusion_matrix(cm, class_names, output_path):
-    import matplotlib.pyplot as plt
-    import numpy as np
-
-    fig, ax = plt.subplots(figsize=(10, 8))
-    im = ax.imshow(cm, interpolation='nearest', cmap=plt.cm.Blues)
-    ax.figure.colorbar(im, ax=ax)
-    ax.set(
-        xticks=np.arange(len(class_names)),
-        yticks=np.arange(len(class_names)),
-        xticklabels=class_names, yticklabels=class_names,
-        xlabel='Predicted', ylabel='True'
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Treinar EmotionNet no AffectNet (configs/treino.toml)"
     )
-    plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
-
-    thresh = cm.max() / 2.
-    for i in range(len(class_names)):
-        for j in range(len(class_names)):
-            ax.text(j, i, format(cm[i, j], 'd'),
-                    ha="center", va="center",
-                    color="white" if cm[i, j] > thresh else "black")
-
-    fig.tight_layout()
-    plt.savefig(output_path, dpi=150, bbox_inches='tight')
-    plt.close(fig)
+    add_config_args(parser)
+    parser.add_argument(
+        "--resume", action="store_true",
+        help="Retomar treino a partir do último best_model.pth",
+    )
+    return parser
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Treinar modelo de Emotion Recognition no AffectNet")
-    
-    parser.add_argument(
-        "--epochs",
-        type=int,
-        default=60,
-        help="Número de épocas"
-    )
-    
-    parser.add_argument(
-        "--batch_size",
-        type=int,
-        default=32,
-        help="Tamanho do batch"
-    )
-    
-    parser.add_argument(
-        "--learning_rate",
-        type=float,
-        default=1e-5,
-        help="Learning rate"
-    )
-    
-    parser.add_argument(
-        "--num_workers",
-        type=int,
-        default=4,
-        help="Número de workers para DataLoader"
-    )
-    
-    parser.add_argument(
-        "--device",
-        type=str,
-        default="cuda" if torch.cuda.is_available() else "cpu",
-        help="Device para treinamento"
-    )
-    
-    parser.add_argument(
-        "--early_stop_patience",
-        type=int,
-        default=8,
-        help="Épocas sem melhora na val loss para early stopping"
-    )
-    
-    parser.add_argument(
-        "--weight_decay",
-        type=float,
-        default=0.05,
-        help="Weight decay (L2 regularization) para o AdamW"
-    )
-    
-    parser.add_argument(
-        "--warmup_epochs",
-        type=int,
-        default=5,
-        help="Número de épocas de warmup linear (default: 5)"
-    )
-    
-    parser.add_argument(
-        "--min_confidence",
-        type=float,
-        default=0.7,
-        help="Confiança mínima do label no CSV (0.0 = usa todos, 0.7 recomendado)"
-    )
-    
-    parser.add_argument(
-        "--focal-gamma",
-        type=float,
-        default=2,
-        help="Gamma da Focal Loss (default: 2)"
-    )
-    
-    parser.add_argument(
-        "--grad-clip",
-        type=float,
-        default=1.0,
-        help="Gradient clipping max norm (0 = desativado, default: 1.0)"
-    )
-    
-    parser.add_argument(
-        "--balance-classes",
-        action="store_true",
-        help="Usar WeightedRandomSampler para balancear batches (OFF por padrão — dataset já balanceado)"
-    )
-    parser.add_argument(
-        "--resume",
-        action="store_true",
-        help="Retomar treino a partir do último best_model.pth"
-    )
-    
-    parser.add_argument(
-        "--amp",
-        action="store_true",
-        default=torch.cuda.is_available(),
-        help="Enable mixed precision training (default: True se CUDA disponível)"
-    )
-    parser.add_argument(
-        "--no-amp",
-        action="store_false",
-        dest="amp",
-        help="Disable mixed precision training"
-    )
+    args = build_parser().parse_args()
+    cfg = resolve_config("emotion", args)
 
-    parser.add_argument(
-        "--dataset_path",
-        type=str,
-        default="dataset/balanced-affectnet",
-        help="Caminho para o dataset de emoção (default: dataset/balanced-affectnet)"
-    )
-    
-    args = parser.parse_args()
-    
-    # Raiz e splits do dataset de emoção (balanced-affectnet por padrão)
-    args.dataset_path = str(resolve_affectnet_root(args.dataset_path))
-    train_split, val_split = resolve_affectnet_splits(Path(args.dataset_path))
-    # Criar diretórios de saída (nova estrutura por modelo)
+    dataset_root = resolve_affectnet_root(cfg["dataset_path"])
+    train_split, val_split = resolve_affectnet_splits(dataset_root)
+
     output_dir = p.EMOTION_CNN_WEIGHTS
-    output_dir.mkdir(parents=True, exist_ok=True)
     experiments_dir = p.EMOTION_CNN_EXPERIMENTS
+    output_dir.mkdir(parents=True, exist_ok=True)
     experiments_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Criar datasets
+
     train_dataset = AffectNetDataset(
-        data_root=args.dataset_path,
+        data_root=dataset_root,
         split=train_split,
         transform=get_transforms(is_train=True),
-        min_confidence=args.min_confidence
+        min_confidence=cfg["min_confidence"],
     )
-    
     val_dataset = AffectNetDataset(
-        data_root=args.dataset_path,
+        data_root=dataset_root,
         split=val_split,
         transform=get_transforms(is_train=False),
-        min_confidence=args.min_confidence
+        min_confidence=cfg["min_confidence"],
     )
-    
-    # Criar DataLoaders
+
     train_sampler = None
-    if args.balance_classes:
+    if cfg["balance_classes"]:
         class_counts = torch.zeros(len(train_dataset.class_to_idx))
         for _, label in train_dataset.samples:
             class_counts[label] += 1
-        sample_weights = [1.0 / class_counts[label].item() for _, label in train_dataset.samples]
-        train_sampler = WeightedRandomSampler(
-            sample_weights, num_samples=len(sample_weights), replacement=True
-        )
-    
+        weights = [1.0 / class_counts[label].item() for _, label in train_dataset.samples]
+        train_sampler = WeightedRandomSampler(weights, num_samples=len(weights), replacement=True)
+
     train_loader = create_dataloader(
-        train_dataset, batch_size=args.batch_size,
-        shuffle=not args.balance_classes, sampler=train_sampler,
-        num_workers=args.num_workers
+        train_dataset, batch_size=cfg["batch_size"],
+        shuffle=not cfg["balance_classes"], sampler=train_sampler,
+        num_workers=cfg["num_workers"],
     )
     val_loader = create_dataloader(
-        val_dataset, batch_size=args.batch_size,
-        shuffle=False, num_workers=args.num_workers
+        val_dataset, batch_size=cfg["batch_size"], num_workers=cfg["num_workers"]
     )
-    
-    # Criar modelo
-    device = torch.device(args.device)
-    
-    resume_checkpoint_path = p.EMOTION_CNN_WEIGHTS / 'best_model.pth'
-    start_epoch = 1
-    ckpt = None
-    
-    if args.resume and resume_checkpoint_path.exists():
-        model, ckpt = create_emotion_model(
-            num_emotions=2, pretrained=True,
-            checkpoint_path=str(resume_checkpoint_path),
-            resume_training=True, device=args.device
-        )
-        start_epoch = ckpt['epoch'] + 1
-        best_val_acc = ckpt['val_acc']
-        print(f"Retomando treino da época {ckpt['epoch']} (val_acc: {ckpt['val_acc']:.2f}%)")
-    else:
-        model = create_emotion_model(
-            num_emotions=2, pretrained=True,
-            device=args.device
-        )
-        best_val_acc = 0.0
-    
-    # Mixed precision
-    scaler = torch.cuda.amp.GradScaler(enabled=args.amp)
-    
-    criterion = FocalLoss(gamma=args.focal_gamma)
-    
-    optimizer = optim.AdamW(
-        model.parameters(),
-        lr=args.learning_rate,
-        weight_decay=args.weight_decay
-    )
-    warmup_scheduler = optim.lr_scheduler.LinearLR(
-        optimizer, start_factor=0.01, total_iters=args.warmup_epochs
-    )
-    cosine_scheduler = optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=args.epochs - args.warmup_epochs
-    )
-    scheduler = optim.lr_scheduler.SequentialLR(
-        optimizer,
-        schedulers=[warmup_scheduler, cosine_scheduler],
-        milestones=[args.warmup_epochs]
-    )
-    
-    # Restaurar optimizer, scheduler e early stopping no resume
-    if args.resume and ckpt is not None:
-        optimizer.load_state_dict(ckpt['optimizer_state_dict'])
-        if 'scheduler_state_dict' in ckpt:
-            try:
-                scheduler.load_state_dict(ckpt['scheduler_state_dict'])
-            except Exception:
-                print("⚠️  Scheduler state incompatível (mudou de ReduceLROnPlateau para Cosine). Recriando scheduler.")
-        best_val_acc_early = ckpt['val_acc']
-        epochs_no_improve = 0
-    else:
-        best_val_acc_early = 0.0
-        epochs_no_improve = 0
-    
-    # Treinamento
-    history = {
-        'train_loss': [],
-        'train_acc': [],
-        'val_loss': [],
-        'val_acc': [],
-        'val_f1': [],
-        'val_precision': [],
-        'val_recall': []
-    }
-    
+
     print("=" * 60)
     print("Treinamento do Modelo de Emotion Recognition")
     print("=" * 60)
-    print(f"Dataset: {args.dataset_path}")
-    print(f"Device: {args.device}")
-    print(f"Épocas: {args.epochs}")
-    print(f"Batch size: {args.batch_size}")
-    print(f"Learning rate: {args.learning_rate}")
-    print(f"Weight decay: {args.weight_decay}")
-    print(f"Warmup epochs: {args.warmup_epochs}")
-    print(f"Mixed precision: {'ON' if args.amp else 'OFF'}")
-    print(f"Gradient clip:   {'ON (max_norm=' + str(args.grad_clip) + ')' if args.grad_clip > 0 else 'OFF'}")
-    print(f"Sampler balanceado (--balance-classes): {'ON' if args.balance_classes else 'OFF'}")
-    print(f"Early stop patience: {args.early_stop_patience}")
-    print(f"Min confidence: {args.min_confidence} (aplica-se apenas a datasets CSV)")
-    print(f"Classifier:           Linear(384→128→2)")
-    print(f"Loss function:         Focal Loss (γ={args.focal_gamma})")
-    print(f"Resume: {'ON (época ' + str(ckpt['epoch']) + ')' if args.resume and ckpt is not None else 'OFF'}")
-    print("=" * 60)
-    print()
-    
-    for epoch in range(start_epoch, args.epochs + 1):
-        train_loss, train_acc = run_epoch(
-            model, train_loader, criterion, device,
-            is_train=True, optimizer=optimizer, scaler=scaler,
-            grad_clip=args.grad_clip,
-            desc=f"Epoch {epoch} [Train]"
+    print(f"Dataset: {dataset_root}")
+    print(f"Device: {cfg['device']} | Épocas: {cfg['epochs']} | "
+          f"Batch: {cfg['batch_size']} | LR: {cfg['learning_rate']}")
+    print(f"Weight decay: {cfg['weight_decay']} | Warmup: {cfg['warmup_epochs']}")
+    print(f"Mixed precision: {'ON' if cfg['amp'] else 'OFF'} | "
+          f"Grad clip: {cfg['grad_clip']}")
+    print(f"Focal Loss (γ={cfg['focal_gamma']}) | "
+          f"Sampler balanceado: {cfg['balance_classes']}")
+    print(f"Early stop patience: {cfg['early_stop_patience']}")
+    print(f"Classifier: Linear(384→128→2)")
+    print("=" * 60, "\n")
+
+    # ── Modelo / resume ────────────────────────────────────────────────────
+    resume_path = output_dir / 'best_model.pth'
+    start_epoch, best_val_acc = 1, -1.0
+    resume_ckpt = None
+
+    if args.resume and resume_path.exists():
+        model, resume_ckpt = create_emotion_model(
+            num_emotions=2, pretrained=True,
+            checkpoint_path=str(resume_path), resume_training=True,
+            device=cfg["device"],
         )
-        val_loss, val_acc, val_metrics = run_epoch(
-            model, val_loader, criterion, device,
-            is_train=False, return_metrics=True,
-            desc=f"Epoch {epoch} [Val]"
+        start_epoch = resume_ckpt['epoch'] + 1
+        best_val_acc = resume_ckpt['val_acc']
+        print(f"Retomando treino da época {resume_ckpt['epoch']} "
+              f"(val_acc: {resume_ckpt['val_acc']:.2f}%)")
+    else:
+        model = create_emotion_model(num_emotions=2, pretrained=True, device=cfg["device"])
+
+    scaler = torch.cuda.amp.GradScaler(enabled=cfg["amp"] and torch.cuda.is_available())
+    criterion = FocalLoss(gamma=cfg["focal_gamma"])
+    optimizer = optim.AdamW(
+        model.parameters(), lr=cfg["learning_rate"], weight_decay=cfg["weight_decay"]
+    )
+    scheduler = optim.lr_scheduler.SequentialLR(
+        optimizer,
+        schedulers=[
+            optim.lr_scheduler.LinearLR(optimizer, start_factor=0.01, total_iters=cfg["warmup_epochs"]),
+            optim.lr_scheduler.CosineAnnealingLR(
+                optimizer, T_max=max(1, cfg["epochs"] - cfg["warmup_epochs"])
+            ),
+        ],
+        milestones=[cfg["warmup_epochs"]],
+    )
+
+    if resume_ckpt is not None:
+        optimizer.load_state_dict(resume_ckpt['optimizer_state_dict'])
+        if 'scheduler_state_dict' in resume_ckpt:
+            try:
+                scheduler.load_state_dict(resume_ckpt['scheduler_state_dict'])
+            except Exception:
+                print("⚠️  Scheduler state incompatível. Recriando scheduler.")
+
+    best_val_acc, _ = train_loop(
+        model, train_loader, val_loader,
+        criterion=criterion, optimizer=optimizer, scheduler=scheduler,
+        device=torch.device(cfg["device"]), epochs=cfg["epochs"],
+        output_dir=output_dir, experiments_dir=experiments_dir,
+        config=cfg, scaler=scaler if cfg["amp"] else None,
+        grad_clip=cfg["grad_clip"], return_metrics=True,
+        early_stop_patience=cfg["early_stop_patience"],
+        start_epoch=start_epoch, best_val_acc=best_val_acc,
+    )
+
+    # Gráficos da melhor época (CM vem do loop via confusion_matrix.npy)
+    cm_path = experiments_dir / 'confusion_matrix.npy'
+    if cm_path.exists():
+        plot_confusion_matrix(
+            np.load(cm_path),
+            class_names=list(train_dataset.class_to_idx.keys()),
+            output_path=experiments_dir / 'confusion_matrix.png',
+            title="Melhor época — matriz de confusão",
         )
-        
-        # Atualizar learning rate (cosine annealing + warmup)
-        scheduler.step()
-        
-        # Salvar histórico
-        history['train_loss'].append(train_loss)
-        history['train_acc'].append(train_acc)
-        history['val_loss'].append(val_loss)
-        history['val_acc'].append(val_acc)
-        history['val_f1'].append(val_metrics['f1_score'])
-        history['val_precision'].append(val_metrics['precision'])
-        history['val_recall'].append(val_metrics['recall'])
-        
-        print(f"         ↳ F1: {val_metrics['f1_score']:.4f} | Prec: {val_metrics['precision']:.4f} | Rec: {val_metrics['recall']:.4f}")
-        
-        # Salvar melhor modelo
-        if val_acc > best_val_acc:
-            best_val_acc = val_acc
-            checkpoint = {
-                'epoch': epoch,
-                'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'scheduler_state_dict': scheduler.state_dict(),
-                'val_acc': val_acc,
-                'val_loss': val_loss
-            }
-            torch.save(checkpoint, output_dir / 'best_model.pth')
-            
-            # Salvar matriz de confusão da melhor época
-            cm = np.array(val_metrics['confusion_matrix'])
-            np.save(experiments_dir / 'confusion_matrix.npy', cm)
-            _plot_confusion_matrix(
-                cm,
-                class_names=list(train_dataset.class_to_idx.keys()),
-                output_path=experiments_dir / 'confusion_matrix.png'
-            )
-            print(f"\n✓ Melhor modelo salvo! Val Acc: {val_acc:.2f}%")
-        
-        # Early stopping (baseado em val_acc)
-        if val_acc > best_val_acc_early:
-            best_val_acc_early = val_acc
-            epochs_no_improve = 0
-        else:
-            epochs_no_improve += 1
-            if epochs_no_improve >= args.early_stop_patience:
-                print(f"\n⏹ Early stopping na época {epoch} (val_acc não melhorou por {args.early_stop_patience} épocas)")
-                break
-        
-        print()
-    
-    # Recarregar melhor modelo do arquivo
-    checkpoint = torch.load(output_dir / 'best_model.pth', map_location=args.device)
-    model.load_state_dict(checkpoint['model_state_dict'])
-    
-    # Salvar histórico
-    with open(experiments_dir / 'training_history.json', 'w') as f:
-        json.dump(history, f, indent=2)
-    
+
+    checkpoint = torch.load(output_dir / 'best_model.pth', map_location=cfg["device"])
     print("=" * 60)
     print("Treinamento concluído!")
     print(f"Melhor Val Acc: {best_val_acc:.2f}%")
-    print(f"Melhor Val F1:  {max(history['val_f1']):.4f}")
     print(f"Modelo recarregado do best checkpoint (época {checkpoint['epoch']})")
-    print(f"Modelo salvo em: {p.EMOTION_CNN_WEIGHTS / 'best_model.pth'}")
+    print(f"Modelo salvo em: {output_dir / 'best_model.pth'}")
     print("=" * 60)
 
 
 if __name__ == "__main__":
     main()
-

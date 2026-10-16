@@ -39,6 +39,8 @@ python train_cnn3d.py
 python train_multimodal.py
 ```
 
+Os hiperparâmetros vêm de `configs/treino.toml` (CLI mínimo: `--config`, `--device`, `--epochs`, `--resume`). A configuração efetiva é gravada em `experiments/training_history.json` e na chave `hyperparameters` de `weights/best_model.pth`.
+
 ## Paths no Código
 
 Os paths são definidos em `src/paths.py`:

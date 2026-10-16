@@ -1,0 +1,45 @@
+# Hiperparâmetros de treino — fonte única para os 3 modelos.
+#
+# Uso:
+#   python train_emotion_model.py                          # usa este arquivo
+#   python train_emotion_model.py --epochs 5 --device cpu  # override pontual
+#   python train_emotion_model.py --config outro.toml
+#
+# Chaves aceitas por seção: as mesmas do DEFAULTS em src/training/config.py.
+# Qualquer chave desconhecida aborta o treino.
+
+[emotion]
+epochs = 60
+batch_size = 32
+learning_rate = 1e-5
+weight_decay = 0.05
+warmup_epochs = 5
+early_stop_patience = 8
+focal_gamma = 2.0
+grad_clip = 1.0
+balance_classes = false
+amp = true
+min_confidence = 0.7
+num_workers = 4
+dataset_path = "dataset/balanced-affectnet"
+
+[cnn3d]
+epochs = 50
+batch_size = 16
+learning_rate = 1e-3
+num_workers = 2
+model_name = "r2plus1d_18"
+freeze_backbone = false
+num_frames = 16
+clip_size = [112, 112]
+dropout = 0.4
+
+[multimodal]
+epochs = 50
+batch_size = 16
+learning_rate = 1e-4
+num_workers = 4
+num_frames = 16
+window_size = 16
+use_temporal_modeling = false
+video_model_path = "models/cnn3d/weights/best_model.pth"
