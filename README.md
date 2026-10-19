@@ -522,7 +522,7 @@ python train_multimodal.py --epochs 50 --device cuda
 
 **Hiperparâmetros (`[multimodal]`):** `batch_size`, `learning_rate`, `num_workers`, `num_frames`, `window_size`, `use_temporal_modeling` (LSTM para pose e emoção), `video_model_path` (checkpoint do backbone CNN 3D).
 
-A fusão é sempre **cross-attention** (sem flag `--fusion_method`). O checkpoint salva `fusion_method=cross_attention`, `emotion_feature_dim=128`, `video_backbone` e `video_feature_dim` (512), usados automaticamente na inferência e avaliação.
+A fusão é **cross-attention**. O checkpoint salva `fusion_method=cross_attention`, `emotion_feature_dim=128`, `video_backbone` e `video_feature_dim` (512), usados automaticamente na inferência e avaliação.
 
 O modelo é salvo em `models/multimodal/weights/best_model.pth`.
 
