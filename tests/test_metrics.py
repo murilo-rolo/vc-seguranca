@@ -5,7 +5,9 @@ import pytest
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
+from src.evaluation.inference import collect_predictions
 from src.evaluation.metrics import MetricsCalculator, calculate_metrics
+from src.models.cnn3d_risk import ensure_channels_first
 
 BINARY_CLASS_NAMES = ["Non-Violent", "Violent"]
 
@@ -97,3 +99,52 @@ def test_metrics_calculator_multiclass():
     assert metrics["accuracy"] == pytest.approx(1.0)
     assert metrics["num_classes"] == 3
     assert y_proba.shape == (12, 3)  # multiclasse mantém matriz completa
+
+
+class _DummyVideoModel(torch.nn.Module):
+    """Recebe clipes (B, C, T, H, W); logit positivo quando os pixels são 1."""
+
+    def forward(self, x):
+        assert x.dim() == 5 and x.shape[1] == 3, \
+            f"esperado (B,C,T,H,W), veio {tuple(x.shape)}"
+        s = x.mean(dim=(1, 2, 3, 4))
+        return torch.stack([-s, s], dim=1)
+
+
+def _video_loader_frame_last(batch_size: int = 2):
+    """Clipes frame-last (B, T, C, H, W) como o RWF-2000 3D devolve."""
+    labels = torch.tensor([0, 1, 0, 1, 1, 0, 1, 0])
+    clips = torch.zeros(len(labels), 4, 3, 8, 8)
+    clips[labels == 1] = 1.0
+    return DataLoader(TensorDataset(clips, labels), batch_size=batch_size)
+
+
+def test_collect_predictions_prepare_inputs_receives_tensor():
+    # Regressão: o hook recebe cada tensor, não o container [tensor]
+    # (bug: ensure_channels_first([clips]) -> 'list' object has no attribute 'dim').
+    calls = []
+
+    def prepare(x):
+        assert isinstance(x, torch.Tensor), f"hook recebeu {type(x)}"
+        calls.append(tuple(x.shape))
+        return ensure_channels_first(x)
+
+    model = _DummyVideoModel().eval()
+    y_true, y_pred, y_proba = collect_predictions(
+        model, _video_loader_frame_last(), "cpu", prepare_inputs=prepare
+    )
+    assert len(calls) == 4  # um por batch (8 amostras / batch_size=2)
+    assert calls[0] == (2, 4, 3, 8, 8)  # frame-last antes da permuta
+    assert (y_pred == y_true).all()
+    assert y_proba.shape == (8,)
+
+
+def test_metrics_calculator_video_frame_last():
+    model = _DummyVideoModel().eval()
+    calc = MetricsCalculator(
+        model, _video_loader_frame_last(), device="cpu",
+        prepare_inputs=ensure_channels_first,
+    )
+    metrics, y_true, y_pred, y_proba = calc.evaluate()
+    assert metrics["accuracy"] == pytest.approx(1.0)
+    assert y_true.shape == y_pred.shape == y_proba.shape == (8,)

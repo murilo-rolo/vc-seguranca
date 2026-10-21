@@ -50,8 +50,10 @@ def collect_predictions(
     Percorre o dataloader e acumula (y_true, y_pred, y_proba).
 
     Args:
-        prepare_inputs: hook aplicado aos inputs antes do forward
-            (ex.: permutação frame-last -> channel-first do CNN3D).
+        prepare_inputs: hook aplicado a cada tensor dos inputs antes do
+            forward (ex.: ensure_channels_first para CNN3D). Quando os
+            inputs são lista/tupla (ex.: [clips]), o hook recebe cada tensor,
+            não o container.
         keep_full_probs: True mantém a matriz completa (N, K); False guarda
             apenas a probabilidade da classe positiva (coluna 1).
 
@@ -65,7 +67,13 @@ def collect_predictions(
         for batch in dataloader:
             inputs, batch_labels = unpack_batch(batch)
             if prepare_inputs is not None:
-                inputs = prepare_inputs(inputs)
+                if isinstance(inputs, (list, tuple)):
+                    inputs = type(inputs)(
+                        prepare_inputs(v) if isinstance(v, torch.Tensor) else v
+                        for v in inputs
+                    )
+                else:
+                    inputs = prepare_inputs(inputs)
             inputs = move_to_device(inputs, device)
 
             outputs = forward_batch(model, inputs)
