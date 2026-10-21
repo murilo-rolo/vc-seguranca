@@ -20,7 +20,10 @@ import torch
 from src import paths as p
 from src.datasets.paired_dataset import paired_root_exists
 from src.evaluation.cross_label import build_report, run_scenarios
-from src.evaluation.model_loading import load_multimodal_model
+from src.evaluation.model_loading import (
+    load_feature_stats_for_checkpoint,
+    load_multimodal_model,
+)
 from src.preprocessing.build_paired_dataset import TEST_CELLS
 
 
@@ -64,12 +67,16 @@ def main():
     print("✓ Modelo carregado\n")
 
     print("Avaliando cenários (split test do dataset pareado)...")
-    all_results = run_scenarios(model, args.device, args.batch_size)
+    feature_stats = load_feature_stats_for_checkpoint(args.model_path)
+    all_results = run_scenarios(
+        model, args.device, args.batch_size, feature_stats=feature_stats,
+    )
 
     report = build_report(all_results, config={
         "model_path": args.model_path,
         "device": args.device,
         "test_cells": list(TEST_CELLS),
+        "normalize_features": feature_stats is not None,
     })
 
     print("\n" + "=" * 60 + "\nResultados\n" + "=" * 60)

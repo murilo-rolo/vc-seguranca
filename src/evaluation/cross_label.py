@@ -65,8 +65,13 @@ def evaluate_cells(
     device: str,
     batch_size: int = 8,
     paired_root: Optional[str] = None,
+    feature_stats: Optional[dict] = None,
 ) -> Tuple[dict, np.ndarray, np.ndarray, np.ndarray, int]:
-    """Avalia o modelo no split 'test' do dataset pareado, filtrado por células."""
+    """Avalia o modelo no split 'test' do dataset pareado, filtrado por células.
+
+    feature_stats: mean/std do train (obrigatório se o checkpoint foi treinado
+    com normalize_features — senão mismatch de escala train/eval).
+    """
     root = Path(paired_root) if paired_root else p.PAIRED_ROOT
     if not paired_root_exists(root):
         raise FileNotFoundError(
@@ -82,6 +87,7 @@ def evaluate_cells(
         window_size=16,
         video_mode="frames",
         pose_mode="keypoints",
+        feature_stats=feature_stats,
     )
     loader = DataLoader(
         dataset,
@@ -105,8 +111,11 @@ def evaluate_scenario(
     device: str,
     batch_size: int,
     paired_root: Optional[str] = None,
+    feature_stats: Optional[dict] = None,
 ) -> dict:
-    metrics, y_true, _, y_proba, n = evaluate_cells(model, cells, device, batch_size, paired_root)
+    metrics, y_true, _, y_proba, n = evaluate_cells(
+        model, cells, device, batch_size, paired_root, feature_stats=feature_stats,
+    )
     return {
         "metrics": metrics,
         "n_samples": n,
@@ -120,12 +129,15 @@ def run_scenarios(
     device: str,
     batch_size: int,
     paired_root: Optional[str] = None,
+    feature_stats: Optional[dict] = None,
 ) -> dict:
     """Avalia todos os cenários (4 células + agregados) e retorna resultados."""
     all_results = {}
     for scenario_name, cells in SCENARIOS:
         print(f"Avaliando: {scenario_name}...")
-        data = evaluate_scenario(model, cells, device, batch_size, paired_root)
+        data = evaluate_scenario(
+            model, cells, device, batch_size, paired_root, feature_stats=feature_stats,
+        )
         all_results[scenario_name] = data
         m = data["metrics"]
         print(f"  ✓ n={data['n_samples']}, accuracy={m['accuracy']:.4f}, "

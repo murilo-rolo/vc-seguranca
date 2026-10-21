@@ -256,6 +256,33 @@ def load_multimodal_model(
     return model
 
 
+def load_feature_stats_for_checkpoint(model_path: str) -> Optional[Dict[str, Any]]:
+    """
+    Stats de normalização compatíveis com o checkpoint.
+
+    Checkpoints treinados com normalize_features=True exigem as mesmas
+    stats no avaliação (senão há mismatch de escala train/eval). Checkpoints
+    antigos (sem a flag) devolvem None — avaliaram features brutas sempre.
+    """
+    try:
+        checkpoint = torch.load(model_path, map_location="cpu")
+    except Exception as e:  # noqa: BLE001 - diagnóstico, não bloqueia a avaliação
+        print(f"⚠️  Não foi possível ler metadata de {model_path}: {e}")
+        return None
+    if not checkpoint.get("normalize_features", False):
+        return None
+    from src.datasets.feature_stats import load_feature_stats
+    stats = load_feature_stats(p.MULTIMODAL_FEATURE_STATS)
+    if stats is None:
+        print(
+            f"⚠️  Checkpoint normalizado, mas {p.MULTIMODAL_FEATURE_STATS} ausente. "
+            "Avaliação será feita SEM normalização (reentrener para regenerar)."
+        )
+    else:
+        print(f"✓ Feature stats do train aplicadas na avaliação: {sorted(stats)}")
+    return stats
+
+
 def resolve_sub_model_path(
     model_type: str,
     model_path: str,

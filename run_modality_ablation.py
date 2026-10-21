@@ -19,6 +19,7 @@ import torch
 from src import paths as p
 from src.evaluation.cross_label import SCENARIOS, cm_values, evaluate_scenario
 from src.evaluation.modality_ablation import build_ablation_models
+from src.evaluation.model_loading import load_feature_stats_for_checkpoint
 from src.preprocessing.build_paired_dataset import validate
 
 
@@ -94,11 +95,16 @@ def main():
     print()
 
     report = {"model_path": args.model_path, "models": {}}
+    # Normalização consistente com o treino (checkpoint decide a flag).
+    feature_stats = load_feature_stats_for_checkpoint(args.model_path)
     for name, model in models.items():
         print(f"━━━ Modelo: {name} ━━━")
         model_results = {}
         for scenario_name, cells in SCENARIOS:
-            data = evaluate_scenario(model, cells, args.device, args.batch_size)
+            data = evaluate_scenario(
+                model, cells, args.device, args.batch_size,
+                feature_stats=feature_stats,
+            )
             row = _scenario_row(data)
             model_results[scenario_name] = row
             auc = f"{row['auc_roc']:.4f}" if row["auc_roc"] is not None else "n/a"
