@@ -62,9 +62,9 @@ DEFAULTS: Dict[str, Dict[str, Any]] = {
         # Mitigação do atalho facial (cross-label)
         "normalize_features": True,
         "emotion_swap_prob": 0.5,
-        "emotion_dropout_prob": 0.5,
+        "emotion_dropout_prob": 0.3,
         "pose_dropout_prob": 0.0,
-        "aux_video_weight": 0.5,
+        "aux_video_weight": 0.3,
     },
 }
 

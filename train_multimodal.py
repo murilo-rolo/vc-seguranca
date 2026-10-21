@@ -10,6 +10,8 @@ Mitigação do atalho facial (cross-label):
 - normalize_features: normaliza emotion/pose com stats do train
 - monitor: val com emotion-swap forçado; best checkpoint e early stopping
   usam (val_acc + val_acc_swap)/2, selecionando invariância à face
+- calibração: limiar de decisão (max min(recall, spec) em val+val_swap)
+  gravado no checkpoint como 'decision_threshold' e aplicado na avaliação
 
 Uso:
     python train_multimodal.py
@@ -31,6 +33,8 @@ from src.datasets.feature_stats import (
     save_feature_stats,
 )
 from src.datasets.multimodal_dataset import get_multimodal_dataloaders
+from src.evaluation.inference import collect_predictions
+from src.evaluation.threshold import calibrate_threshold
 from src.models.cnn3d_risk import create_cnn3d_model, ensure_channels_first
 from src.models.multimodal_risk import create_multimodal_model
 from src.training.config import add_config_args, resolve_config
@@ -138,6 +142,51 @@ def _infer_pose_feature_dim(dataset) -> int:
             return int(np.load(path, mmap_mode="r").shape[1]) * 3
     # Sem pose.npy o dataset usa zeros (DEFAULT_POSE_JOINTS, 3).
     return DEFAULT_POSE_JOINTS * 3
+
+
+def _calibrate_decision_threshold(
+    multimodal_model: torch.nn.Module,
+    train_model: torch.nn.Module,
+    loaders: list,
+    device,
+    output_dir,
+) -> float:
+    """
+    Calibra o limiar de decisão no fim do treino e grava no best_model.pth.
+
+    Sweep sobre (val [+ val_swap]) combinados: val_swap simula a condição
+    cross-label (face trocada), ancorando o limiar nas células do teste.
+    Critério: max min(recall, spec) — alinhado às metas de ambas células.
+    """
+    best_path = output_dir / "best_model.pth"
+    best_ckpt = torch.load(best_path, map_location="cpu")
+    multimodal_model.load_state_dict(best_ckpt["model_state_dict"])
+
+    ys, ps = [], []
+    for loader in loaders:
+        y_true, _, y_proba = collect_predictions(
+            train_model, loader, device, keep_full_probs=False,
+        )
+        ys.append(y_true)
+        ps.append(y_proba)
+    y_true = np.concatenate(ys)
+    y_proba = np.concatenate(ps)
+
+    result = calibrate_threshold(y_true, y_proba)
+    t = result["threshold"]
+
+    print("━━━ Calibração do limiar de decisão ━━━")
+    print(f"  n={len(y_true)} | t={t:.4f}", end="")
+    if result["recall"] is not None:
+        print(f" | recall={result['recall']:.4f} | spec={result['spec']:.4f} "
+              f"| acc={result['accuracy']:.4f}")
+    else:
+        print(" (val single-class — fallback 0.5)")
+
+    best_ckpt["decision_threshold"] = t
+    torch.save(best_ckpt, best_path)
+    print(f"✓ decision_threshold={t:.4f} gravado em {best_path}")
+    return t
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -310,6 +359,17 @@ def main():
             "aux_video_weight": aux_video_weight,
             "normalize_features": cfg.get("normalize_features", False),
         },
+    )
+
+    # Calibração do limiar de decisão (Fase E): sweep em val [+ val_swap]
+    # com o melhor checkpoint; gravado como 'decision_threshold' e aplicado
+    # automaticamente pelos scripts de avaliação.
+    calibration_loaders = [val_loader]
+    if monitor_loader is not None:
+        calibration_loaders.append(monitor_loader)
+    _calibrate_decision_threshold(
+        multimodal_model, train_model, calibration_loaders,
+        torch.device(cfg["device"]), output_dir,
     )
 
     print("=" * 60)

@@ -66,11 +66,13 @@ def evaluate_cells(
     batch_size: int = 8,
     paired_root: Optional[str] = None,
     feature_stats: Optional[dict] = None,
+    decision_threshold: Optional[float] = None,
 ) -> Tuple[dict, np.ndarray, np.ndarray, np.ndarray, int]:
     """Avalia o modelo no split 'test' do dataset pareado, filtrado por células.
 
     feature_stats: mean/std do train (obrigatório se o checkpoint foi treinado
     com normalize_features — senão mismatch de escala train/eval).
+    decision_threshold: limiar calibrado (None = argmax/threshold 0.5).
     """
     root = Path(paired_root) if paired_root else p.PAIRED_ROOT
     if not paired_root_exists(root):
@@ -100,6 +102,7 @@ def evaluate_cells(
     calculator = MetricsCalculator(
         model, loader, device=device,
         class_names=["Non-Violent", "Violent"], num_classes=2,
+        threshold=decision_threshold,
     )
     metrics, y_true, y_pred, y_proba = calculator.evaluate()
     return metrics, y_true, y_pred, y_proba, len(dataset)
@@ -112,9 +115,11 @@ def evaluate_scenario(
     batch_size: int,
     paired_root: Optional[str] = None,
     feature_stats: Optional[dict] = None,
+    decision_threshold: Optional[float] = None,
 ) -> dict:
     metrics, y_true, _, y_proba, n = evaluate_cells(
         model, cells, device, batch_size, paired_root, feature_stats=feature_stats,
+        decision_threshold=decision_threshold,
     )
     return {
         "metrics": metrics,
@@ -130,6 +135,7 @@ def run_scenarios(
     batch_size: int,
     paired_root: Optional[str] = None,
     feature_stats: Optional[dict] = None,
+    decision_threshold: Optional[float] = None,
 ) -> dict:
     """Avalia todos os cenários (4 células + agregados) e retorna resultados."""
     all_results = {}
@@ -137,6 +143,7 @@ def run_scenarios(
         print(f"Avaliando: {scenario_name}...")
         data = evaluate_scenario(
             model, cells, device, batch_size, paired_root, feature_stats=feature_stats,
+            decision_threshold=decision_threshold,
         )
         all_results[scenario_name] = data
         m = data["metrics"]

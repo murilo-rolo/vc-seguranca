@@ -26,6 +26,7 @@ import torch
 from src import paths as p
 from src.evaluation.cross_label import build_report, generate_charts, run_scenarios
 from src.evaluation.model_loading import (
+    load_decision_threshold,
     load_feature_stats_for_checkpoint,
     load_multimodal_model,
 )
@@ -92,14 +93,18 @@ def main():
 
     # Normalização consistente com o treino (checkpoint decide a flag).
     feature_stats = load_feature_stats_for_checkpoint(args.model_path)
+    # Limiar calibrado no treino (None => argmax / threshold 0.5).
+    decision_threshold = load_decision_threshold(args.model_path)
 
     all_results = run_scenarios(
         model, args.device, args.batch_size, feature_stats=feature_stats,
+        decision_threshold=decision_threshold,
     )
     report = build_report(all_results, config={
         "model_path": args.model_path,
         "device": args.device,
         "normalize_features": feature_stats is not None,
+        "decision_threshold": decision_threshold if decision_threshold is not None else 0.5,
     })
 
     print("\n━━━ Etapa 3: Relatório ━━━")

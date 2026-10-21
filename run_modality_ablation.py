@@ -19,7 +19,10 @@ import torch
 from src import paths as p
 from src.evaluation.cross_label import SCENARIOS, cm_values, evaluate_scenario
 from src.evaluation.modality_ablation import build_ablation_models
-from src.evaluation.model_loading import load_feature_stats_for_checkpoint
+from src.evaluation.model_loading import (
+    load_decision_threshold,
+    load_feature_stats_for_checkpoint,
+)
 from src.preprocessing.build_paired_dataset import validate
 
 
@@ -97,6 +100,11 @@ def main():
     report = {"model_path": args.model_path, "models": {}}
     # Normalização consistente com o treino (checkpoint decide a flag).
     feature_stats = load_feature_stats_for_checkpoint(args.model_path)
+    # Limiar calibrado no treino (None => argmax / threshold 0.5).
+    decision_threshold = load_decision_threshold(args.model_path)
+    report["decision_threshold"] = (
+        decision_threshold if decision_threshold is not None else 0.5
+    )
     for name, model in models.items():
         print(f"━━━ Modelo: {name} ━━━")
         model_results = {}
@@ -104,6 +112,7 @@ def main():
             data = evaluate_scenario(
                 model, cells, args.device, args.batch_size,
                 feature_stats=feature_stats,
+                decision_threshold=decision_threshold,
             )
             row = _scenario_row(data)
             model_results[scenario_name] = row

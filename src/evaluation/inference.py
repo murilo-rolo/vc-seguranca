@@ -45,6 +45,7 @@ def collect_predictions(
     device,
     prepare_inputs: PrepareFn = None,
     keep_full_probs: bool = False,
+    threshold: Optional[float] = None,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Percorre o dataloader e acumula (y_true, y_pred, y_proba).
@@ -56,6 +57,9 @@ def collect_predictions(
             não o container.
         keep_full_probs: True mantém a matriz completa (N, K); False guarda
             apenas a probabilidade da classe positiva (coluna 1).
+        threshold: limiar de decisão para classificação binária
+            (pred = P(classe 1) >= threshold). None => argmax (threshold 0.5
+            equivalente). Ignorado em modelos multiclass.
 
     Returns:
         (y_true, y_pred, y_proba)
@@ -79,7 +83,12 @@ def collect_predictions(
             outputs = forward_batch(model, inputs)
             batch_probs = torch.softmax(outputs, dim=1)
 
-            preds.append(torch.argmax(outputs, dim=1).cpu().numpy())
+            if threshold is not None and batch_probs.shape[1] == 2:
+                preds.append(
+                    (batch_probs[:, 1] >= threshold).to(torch.int64).cpu().numpy()
+                )
+            else:
+                preds.append(torch.argmax(outputs, dim=1).cpu().numpy())
             probs.append(
                 batch_probs.cpu().numpy()
                 if keep_full_probs

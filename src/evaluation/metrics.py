@@ -163,6 +163,7 @@ class MetricsCalculator:
         class_names: List[str] = BINARY_CLASS_NAMES,
         num_classes: Optional[int] = None,
         prepare_inputs: Optional[Callable] = None,
+        threshold: Optional[float] = None,
     ):
         """
         Args:
@@ -174,6 +175,7 @@ class MetricsCalculator:
                 (>2 classes = multiclass).
             prepare_inputs: hook aplicado aos inputs antes do forward
                 (ex.: ensure_channels_first para CNN3D).
+            threshold: limiar de decisão binário (None = argmax/threshold 0.5).
         """
         self.model = model
         self.dataloader = dataloader
@@ -181,6 +183,7 @@ class MetricsCalculator:
         self.class_names = list(class_names)
         self.num_classes = num_classes if num_classes is not None else len(self.class_names)
         self.prepare_inputs = prepare_inputs
+        self.threshold = threshold
         self.model.eval()
 
     def evaluate(self) -> Tuple[Dict, np.ndarray, np.ndarray, np.ndarray]:
@@ -196,6 +199,7 @@ class MetricsCalculator:
             self.device,
             prepare_inputs=self.prepare_inputs,
             keep_full_probs=self.num_classes > 2,
+            threshold=self.threshold if self.num_classes <= 2 else None,
         )
 
         if self.num_classes > 2:

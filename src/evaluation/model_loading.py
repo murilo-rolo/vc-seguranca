@@ -283,6 +283,26 @@ def load_feature_stats_for_checkpoint(model_path: str) -> Optional[Dict[str, Any
     return stats
 
 
+def load_decision_threshold(model_path: str) -> Optional[float]:
+    """
+    Limiar calibrado no treino (decision_threshold), se houver.
+
+    Checkpoints legados (sem a chave) devolvem None => avaliação usa
+    argmax (threshold 0.5), comportamento anterior.
+    """
+    try:
+        checkpoint = torch.load(model_path, map_location="cpu")
+    except Exception as e:  # noqa: BLE001 - diagnóstico, não bloqueia a avaliação
+        print(f"⚠️  Não foi possível ler metadata de {model_path}: {e}")
+        return None
+    threshold = checkpoint.get("decision_threshold")
+    if threshold is None:
+        return None
+    threshold = float(threshold)
+    print(f"✓ Limiar calibrado aplicado na avaliação: {threshold:.4f}")
+    return threshold
+
+
 def resolve_sub_model_path(
     model_type: str,
     model_path: str,
