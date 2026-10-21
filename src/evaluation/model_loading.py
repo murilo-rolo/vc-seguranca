@@ -196,7 +196,13 @@ def load_model(
         else:
             model.load_state_dict(checkpoint)
 
-        model = MultimodalEvalWrapper(model, _create_video_backbone(device, video_model_path))
+        video_model = _create_video_backbone(device, video_model_path)
+        # Fase F: com fine-tune do backbone, o CNN3D salvo no checkpoint
+        # multimodal difere dos pesos originais — tem precedência.
+        if "video_model_state_dict" in checkpoint:
+            video_model.load_state_dict(checkpoint["video_model_state_dict"])
+            print("✓ Backbone CNN3D fine-tuned (do checkpoint multimodal) carregado")
+        model = MultimodalEvalWrapper(model, video_model)
 
     elif model_type in ("cnn3d", "video"):
         # Backbone selecionado pela metadata do checkpoint (model_name/backbone),

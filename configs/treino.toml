@@ -44,6 +44,11 @@ window_size = 16
 use_temporal_modeling = false
 video_model_path = "models/cnn3d/weights/best_model.pth"
 
+# Fine-tune do backbone CNN3D junto com a fusão (Fase F).
+# false = comportamento antigo (backbone congelado, features via no_grad).
+finetune_backbone = true
+backbone_lr = 1e-5
+
 # Reprodutibilidade / regularização
 seed = 42
 weight_decay = 1e-4

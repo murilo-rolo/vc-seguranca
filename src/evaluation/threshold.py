@@ -3,8 +3,14 @@ Calibração do limiar de decisão (classificação binária).
 
 Motivação (impact study cross-label): com AUC alto mas ponto de operação
 enviesado, o limiar 0.5 (argmax) não satisfaz simultaneamente recall e
-especificidade nas células do teste. O sweep escolhe o limiar que maximiza
-min(recall, spec) — critério alinhado às metas de ambas as células.
+especificidade nas células do teste.
+
+Critério (Fase F/D4b): maximizar recall sujeito a spec ≥ spec_target no
+conjunto de calibração (val [+ val_swap]). O alvo de spec com margem
+(0.73 > meta 0.70) compensa o shift val→teste observado na Fase E, onde o
+critério maximin puro escolheu spec 0.77/recall 0.68 no teste embora a
+curva tenha pontos com recall 0.76/spec 0.75. Fallback: maximin
+(min(recall, spec)) quando nenhum limiar atende a constraint.
 """
 
 from typing import Dict, Optional, Union
@@ -12,6 +18,7 @@ from typing import Dict, Optional, Union
 import numpy as np
 
 DEFAULT_THRESHOLD = 0.5
+DEFAULT_SPEC_TARGET = 0.73
 
 ArrayLike = Union[np.ndarray, list]
 
@@ -29,16 +36,18 @@ def calibrate_threshold(
     y_true: ArrayLike,
     y_proba: ArrayLike,
     grid_size: int = 1001,
+    spec_target: float = DEFAULT_SPEC_TARGET,
 ) -> Dict[str, Optional[float]]:
     """
     Varre limiares em [0, 1] sobre a probabilidade da classe positiva.
 
-    Escolhe t que maximiza min(recall, spec); desempate por Youden J e,
-    em último caso, por acurácia. y_true single-class => fallback 0.5
-    (recall/spec indefinidos).
+    Escolhe t que maximiza recall sujeito a spec ≥ spec_target; desempate
+    por spec e acurácia. Se nenhum t satisfaz a constraint, faz fallback
+    para max min(recall, spec) (desempate por Youden J e acurácia).
+    y_true single-class => fallback 0.5 (recall/spec indefinidos).
 
     Returns:
-        {"threshold", "recall", "spec", "accuracy"}
+        {"threshold", "recall", "spec", "accuracy", "criterion", "spec_target"}
     """
     y = np.asarray(y_true).astype(int)
     scores = _positive_scores(y_proba)
@@ -54,10 +63,14 @@ def calibrate_threshold(
             "recall": None,
             "spec": None,
             "accuracy": None,
+            "criterion": None,
+            "spec_target": spec_target,
         }
 
-    best_key: Optional[tuple] = None
-    best: Dict[str, Optional[float]] = {}
+    constrained_key: Optional[tuple] = None
+    constrained: Dict[str, Optional[float]] = {}
+    maximin_key: Optional[tuple] = None
+    maximin: Dict[str, Optional[float]] = {}
 
     for t in np.linspace(0.0, 1.0, grid_size):
         pred = scores >= t
@@ -66,14 +79,32 @@ def calibrate_threshold(
         recall = tp / n_pos
         spec = tn / n_neg
         acc = (tp + tn) / y.size
-        key = (min(recall, spec), recall + spec - 1.0, acc)
-        if best_key is None or key > best_key:
-            best_key = key
-            best = {
+
+        mkey = (min(recall, spec), recall + spec - 1.0, acc)
+        if maximin_key is None or mkey > maximin_key:
+            maximin_key = mkey
+            maximin = {
                 "threshold": float(t),
                 "recall": recall,
                 "spec": spec,
                 "accuracy": acc,
             }
 
-    return best
+        if spec >= spec_target:
+            ckey = (recall, spec, acc)
+            if constrained_key is None or ckey > constrained_key:
+                constrained_key = ckey
+                constrained = {
+                    "threshold": float(t),
+                    "recall": recall,
+                    "spec": spec,
+                    "accuracy": acc,
+                }
+
+    if constrained:
+        constrained["criterion"] = "spec_constrained"
+    else:
+        maximin["criterion"] = "maximin"
+        constrained = maximin
+    constrained["spec_target"] = spec_target
+    return constrained

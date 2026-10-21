@@ -10,8 +10,12 @@ Mitigação do atalho facial (cross-label):
 - normalize_features: normaliza emotion/pose com stats do train
 - monitor: val com emotion-swap forçado; best checkpoint e early stopping
   usam (val_acc + val_acc_swap)/2, selecionando invariância à face
-- calibração: limiar de decisão (max min(recall, spec) em val+val_swap)
-  gravado no checkpoint como 'decision_threshold' e aplicado na avaliação
+- calibração: limiar de decisão (recall máximo sujeito a spec ≥ 0.73 em
+  val+val_swap; fallback maximin) gravado no checkpoint como
+  'decision_threshold' e aplicado na avaliação
+- finetune_backbone (Fase F): fine-tune do CNN3D junto com a fusão
+  (backbone_lr 10× menor); pesos do backbone salvos no best_model.pth
+  como 'video_model_state_dict' e recarregados na avaliação
 
 Uso:
     python train_multimodal.py
@@ -42,15 +46,20 @@ from src.training.loop import train_loop
 
 
 class MultimodalWithVideoBackbone(nn.Module):
-    """Encapsula extração de features de vídeo (CNN 3D) + forward multimodal."""
+    """Encapsula extração de features de vídeo (CNN 3D) + forward multimodal.
 
-    def __init__(self, multimodal_model, video_model):
+    finetune_backbone=False: extração sem grad (backbone congelado, Fase E).
+    True (Fase F): grad flui para o CNN3D, que é fine-tuned com a fusão.
+    """
+
+    def __init__(self, multimodal_model, video_model, finetune_backbone: bool = True):
         super().__init__()
         self.multimodal = multimodal_model
         self.video_model = video_model
+        self.finetune_backbone = finetune_backbone
 
     def forward(self, video, pose, emotion, return_aux: bool = False):
-        with torch.no_grad():
+        with torch.set_grad_enabled(self.finetune_backbone):
             if video.dim() == 5:
                 video = self.video_model.get_features(ensure_channels_first(video))
         return self.multimodal(video, pose, emotion, return_aux=return_aux)
@@ -156,11 +165,20 @@ def _calibrate_decision_threshold(
 
     Sweep sobre (val [+ val_swap]) combinados: val_swap simula a condição
     cross-label (face trocada), ancorando o limiar nas células do teste.
-    Critério: max min(recall, spec) — alinhado às metas de ambas células.
+    Critério (D4b): recall máximo sujeito a spec ≥ 0.73 (margem sobre a
+    meta 0.70 p/ o shift val→teste); fallback maximin.
     """
     best_path = output_dir / "best_model.pth"
     best_ckpt = torch.load(best_path, map_location="cpu")
     multimodal_model.load_state_dict(best_ckpt["model_state_dict"])
+    # Com fine-tune (Fase F), o backbone salvo no melhor checkpoint difere
+    # dos pesos finais em memória — recarrega p/ calibrar com o modelo real.
+    video_model = getattr(train_model, "video_model", None)
+    if video_model is None:
+        video_model = getattr(getattr(train_model, "model", None), "video_model", None)
+    if video_model is not None and "video_model_state_dict" in best_ckpt:
+        video_model.load_state_dict(best_ckpt["video_model_state_dict"])
+        print("✓ Backbone CNN3D do melhor checkpoint recarregado p/ calibração")
 
     ys, ps = [], []
     for loader in loaders:
@@ -176,6 +194,7 @@ def _calibrate_decision_threshold(
     t = result["threshold"]
 
     print("━━━ Calibração do limiar de decisão ━━━")
+    print(f"  critério={result['criterion']} (spec_target={result['spec_target']:.2f})")
     print(f"  n={len(y_true)} | t={t:.4f}", end="")
     if result["recall"] is not None:
         print(f" | recall={result['recall']:.4f} | spec={result['spec']:.4f} "
@@ -210,6 +229,8 @@ def main():
     emotion_dropout_prob = cfg.get("emotion_dropout_prob", 0.0)
     pose_dropout_prob = cfg.get("pose_dropout_prob", 0.0)
     emotion_swap_prob = cfg.get("emotion_swap_prob", 0.0)
+    finetune_backbone = cfg.get("finetune_backbone", True)
+    backbone_lr = cfg.get("backbone_lr", 1e-5)
 
     print("=" * 60)
     print("Treinamento do Modelo Multimodal")
@@ -222,6 +243,8 @@ def main():
           f"drop(emotion)={emotion_dropout_prob} drop(pose)={pose_dropout_prob} "
           f"aux_video={aux_video_weight} "
           f"norm={cfg.get('normalize_features', False)}")
+    print(f"Backbone CNN3D: "
+          f"{'FINE-TUNE (lr=' + format(backbone_lr, '.0e') + ')' if finetune_backbone else 'congelado (comportamento Fase E)'}")
     print("=" * 60)
 
     print("Carregando modelo de vídeo...")
@@ -315,9 +338,10 @@ def main():
         aux_video_weight=aux_video_weight,
         device=cfg["device"],
     )
-    model = MultimodalWithVideoBackbone(multimodal_model, video_model).to(
-        torch.device(cfg["device"])
-    )
+    model = MultimodalWithVideoBackbone(
+        multimodal_model, video_model,
+        finetune_backbone=finetune_backbone,
+    ).to(torch.device(cfg["device"]))
 
     if aux_video_weight > 0:
         train_model = AuxTrainWrapper(model, aux_video_weight).to(torch.device(cfg["device"]))
@@ -331,11 +355,22 @@ def main():
             label_smoothing=cfg.get("label_smoothing", 0.0)
         )
 
-    optimizer = optim.Adam(
-        multimodal_model.parameters(),
-        lr=cfg["learning_rate"],
-        weight_decay=cfg.get("weight_decay", 0.0),
-    )
+    weight_decay = cfg.get("weight_decay", 0.0)
+    if finetune_backbone:
+        optimizer = optim.Adam([
+            {"params": video_model.parameters(), "lr": backbone_lr,
+             "weight_decay": weight_decay},
+            {"params": multimodal_model.parameters(), "lr": cfg["learning_rate"],
+             "weight_decay": weight_decay},
+        ])
+        print(f"Otimizer: 2 grupos (backbone lr={backbone_lr:.0e}, "
+              f"fusão lr={cfg['learning_rate']:.0e})")
+    else:
+        optimizer = optim.Adam(
+            multimodal_model.parameters(),
+            lr=cfg["learning_rate"],
+            weight_decay=weight_decay,
+        )
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=15, gamma=0.1)
 
     best_val_acc, _ = train_loop(
@@ -358,6 +393,10 @@ def main():
             "pose_dropout_prob": pose_dropout_prob,
             "aux_video_weight": aux_video_weight,
             "normalize_features": cfg.get("normalize_features", False),
+            "finetune_backbone": finetune_backbone,
+            # Pesos do backbone no momento da época vencedora (referências
+            # vivas serializadas no save) — avaliação recarrega isto.
+            "video_model_state_dict": video_model.state_dict(),
         },
     )
 

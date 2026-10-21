@@ -215,11 +215,16 @@ def build_ablation_models(
     vckpt_path = video_model_path or str(p.CNN3D_WEIGHTS / "best_model.pth")
     vckpt = torch.load(vckpt_path, map_location=device)
     vname = vckpt.get("model_name") or vckpt.get("backbone") or "r2plus1d_18"
+    # Fase F: com fine-tune, o CNN3D salvo no multimodal difere dos pesos
+    # originais e é o pathway de vídeo real do modelo — tem precedência.
+    finetuned_state = checkpoint.get("video_model_state_dict")
 
     def _make_video_backbone():
         model = create_cnn3d_model(
             model_name=vname, num_classes=2, checkpoint_path=vckpt_path, device=device,
         )
+        if finetuned_state is not None:
+            model.load_state_dict(finetuned_state)
         model.eval()
         return model
 

@@ -34,6 +34,34 @@ def test_calibrate_maximin_with_overlap():
     assert 0.4 < result["threshold"] <= 0.5
 
 
+def test_calibrate_spec_constrained_prefers_recall():
+    # spec_target alto troca recall por margem de spec; alvo baixo permite
+    # o ponto de max recall com spec ≥ alvo (critério D4b).
+    y_true = [0, 0, 0, 0, 0, 1, 1, 1, 1, 1]
+    scores = [0.1, 0.2, 0.3, 0.4, 0.95, 0.5, 0.6, 0.7, 0.8, 0.96]
+
+    strict = calibrate_threshold(y_true, scores, spec_target=0.9)
+    assert strict["criterion"] == "spec_constrained"
+    assert strict["spec"] == pytest.approx(1.0)
+    assert strict["recall"] == pytest.approx(0.2)
+    assert 0.95 < strict["threshold"] <= 0.96
+
+    loose = calibrate_threshold(y_true, scores, spec_target=0.7)
+    assert loose["criterion"] == "spec_constrained"
+    assert loose["recall"] == pytest.approx(1.0)
+    assert loose["spec"] == pytest.approx(0.8)
+    assert 0.4 < loose["threshold"] <= 0.5
+
+
+def test_calibrate_spec_target_infeasible_fallback_maximin():
+    y_true = [0, 0, 0, 0, 0, 1, 1, 1, 1, 1]
+    scores = [0.1, 0.2, 0.3, 0.4, 0.95, 0.5, 0.6, 0.7, 0.8, 0.96]
+    result = calibrate_threshold(y_true, scores, spec_target=1.01)
+    assert result["criterion"] == "maximin"
+    assert min(result["recall"], result["spec"]) == pytest.approx(0.8)
+    assert 0.4 < result["threshold"] <= 0.5
+
+
 def test_calibrate_single_class_fallback():
     result = calibrate_threshold([1, 1, 1], [0.2, 0.6, 0.9])
     assert result["threshold"] == DEFAULT_THRESHOLD

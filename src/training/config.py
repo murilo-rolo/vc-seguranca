@@ -54,6 +54,12 @@ DEFAULTS: Dict[str, Dict[str, Any]] = {
         "window_size": 16,
         "use_temporal_modeling": False,
         "video_model_path": str(p.CNN3D_WEIGHTS / "best_model.pth"),
+        # Fine-tune do backbone CNN3D junto com a fusão (Fase F):
+        # finetune_backbone=false restaura o comportamento antigo (congelado,
+        # no_grad na extração de features). backbone_lr = lr do grupo do
+        # backbone (10× menor que o da fusão por padrão).
+        "finetune_backbone": True,
+        "backbone_lr": 1e-5,
         # Reprodutibilidade / regularização
         "seed": 42,
         "weight_decay": 1e-4,
