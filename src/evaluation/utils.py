@@ -129,9 +129,10 @@ def apply_distortions(
         Frame distorcido
     """
     if distortion_type == "resize_down":
-        size = int(224 * (1 - intensity))
-        size = max(64, size)  # Mínimo 64x64
-        return apply_resize(frame, (size, size))
+        h, w = frame.shape[:2]
+        size = max(64, int(min(h, w) * (1 - intensity)))  # Mínimo 64x64
+        small = apply_resize(frame, (size, size))
+        return apply_resize(small, (w, h))  # preserva o shape original
     
     elif distortion_type == "gaussian_blur":
         kernel_size = int(3 + intensity * 10)
