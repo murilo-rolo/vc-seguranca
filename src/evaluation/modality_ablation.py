@@ -259,6 +259,8 @@ def build_ablation_models(
 
     cnn3d = UnimodalWrapper(_make_video_backbone(), "video").to(device)
 
+    # Flags de robustez gravadas no treino: criam as chaves novas
+    # (emotion_missing_token / video_aux_head) para o load estrito passar.
     multimodal = create_multimodal_model(
         video_feature_dim=dims.get("video_feature_dim", 512),
         pose_feature_dim=dims["pose_feature_dim"],
@@ -266,6 +268,9 @@ def build_ablation_models(
         num_frames=16,
         fusion_method="cross_attention",
         use_temporal_modeling=dims["use_temporal_modeling"],
+        emotion_dropout_prob=checkpoint.get("emotion_dropout_prob", 0.0),
+        pose_dropout_prob=checkpoint.get("pose_dropout_prob", 0.0),
+        aux_video_weight=checkpoint.get("aux_video_weight", 0.0),
         device=device,
     )
     multimodal.load_state_dict(state_dict)
