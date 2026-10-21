@@ -97,6 +97,42 @@ def test_train_loop_saves_checkpoint_and_history(tmp_path):
     assert history["config"] == cfg
     assert len(history["val_acc"]) == 2
     assert best_acc == max(history["val_acc"])
+    # sem monitor_loader: nenhuma chave de monitor
+    assert "monitor_score" not in history and "val_acc_swap" not in history
+    assert "monitor_score" not in ckpt
+
+
+def _tiny_loader_flipped():
+    labels = torch.tensor([1, 0, 1, 0, 1, 0, 0, 1])
+    inputs = labels.float().view(-1, 1) * 2 - 1
+    return DataLoader(TensorDataset(inputs, labels), batch_size=4)
+
+
+def test_train_loop_monitor_loader_selects_by_mean(tmp_path):
+    model = _TinyModel()
+    out = tmp_path / "weights"
+    exp = tmp_path / "experiments"
+
+    best, history = train_loop(
+        model, _tiny_loader(), _tiny_loader(),
+        criterion=torch.nn.CrossEntropyLoss(),
+        optimizer=torch.optim.Adam(model.parameters(), lr=1e-2),
+        device=torch.device("cpu"), epochs=2,
+        output_dir=out, experiments_dir=exp,
+        monitor_loader=_tiny_loader_flipped(),
+    )
+
+    assert len(history["val_acc_swap"]) == 2
+    assert len(history["monitor_score"]) == 2
+    for i in range(2):
+        expected = (history["val_acc"][i] + history["val_acc_swap"][i]) / 2
+        assert history["monitor_score"][i] == pytest.approx(expected)
+    assert best == max(history["monitor_score"])
+
+    ckpt = torch.load(out / "best_model.pth", map_location="cpu")
+    assert ckpt["monitor_score"] == pytest.approx(best)
+    assert "val_acc_swap" in ckpt and "val_acc" in ckpt
+    assert (exp / "training_history.json").exists()
 
 
 def test_train_loop_checkpoint_model_saves_submodule(tmp_path):

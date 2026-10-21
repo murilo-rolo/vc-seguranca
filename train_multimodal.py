@@ -8,6 +8,8 @@ Mitigação do atalho facial (cross-label):
 - emotion_dropout_prob/pose_dropout_prob: modal dropout (tokens learnable)
 - aux_video_weight: loss auxiliar sobre o token de vídeo pré-atenção
 - normalize_features: normaliza emotion/pose com stats do train
+- monitor: val com emotion-swap forçado; best checkpoint e early stopping
+  usam (val_acc + val_acc_swap)/2, selecionando invariância à face
 
 Uso:
     python train_multimodal.py
@@ -185,8 +187,13 @@ def main():
 
     feature_stats = None
     pose_feature_dim = 51
+    monitor_loader = None
     print("Criando DataLoaders...")
-    from src.datasets.paired_dataset import get_paired_dataloaders, paired_root_exists
+    from src.datasets.paired_dataset import (
+        PairedSurveillanceDataset,
+        get_paired_dataloaders,
+        paired_root_exists,
+    )
     if paired_root_exists():
         print(f"✓ Dataset pareado: {p.PAIRED_ROOT}")
         feature_stats = _resolve_feature_stats(cfg)
@@ -202,6 +209,31 @@ def main():
         )
         pose_feature_dim = _infer_pose_feature_dim(train_loader.dataset)
         print(f"✓ Pose feature dim inferida: {pose_feature_dim}")
+
+        # Monitor: val com emotion-swap forçado (invariância à face).
+        # best checkpoint + early stopping passam a usar
+        # monitor_score = (val_acc + val_acc_swap)/2 no train_loop.
+        if emotion_swap_prob > 0:
+            from torch.utils.data import DataLoader
+
+            val_swap_dataset = PairedSurveillanceDataset(
+                split="val",
+                num_frames=cfg["num_frames"],
+                window_size=cfg["window_size"],
+                video_mode="frames",
+                pose_mode="flatten",
+                feature_stats=feature_stats,
+                force_emotion_swap=True,
+            )
+            monitor_loader = DataLoader(
+                val_swap_dataset,
+                batch_size=cfg["batch_size"],
+                shuffle=False,
+                num_workers=cfg["num_workers"],
+                pin_memory=torch.cuda.is_available(),
+            )
+            print(f"✓ Monitor val trocado: {len(val_swap_dataset)} amostras "
+                  f"(swap prob={val_swap_dataset.emotion_swap_prob:.1f})")
     else:
         print("⚠️  dataset/paired não encontrado — usando CSV legado "
               "(gerar com: python -m src.preprocessing.build_paired_dataset)")
@@ -220,6 +252,8 @@ def main():
         )
 
     print("Criando modelo multimodal...")
+    print(f"Monitor de seleção: "
+          f"{'val + val-swapped (swap forçado)' if monitor_loader is not None else 'val apenas'}")
     multimodal_model = create_multimodal_model(
         video_feature_dim=video_model.feature_dim,
         pose_feature_dim=pose_feature_dim,
@@ -263,12 +297,14 @@ def main():
         model_hook=_multimodal_hook, config=cfg,
         early_stop_patience=cfg.get("early_stop_patience"),
         checkpoint_model=multimodal_model,
+        monitor_loader=monitor_loader,
         checkpoint_extra={
             "fusion_method": "cross_attention",
             "use_temporal_modeling": cfg["use_temporal_modeling"],
             "emotion_feature_dim": multimodal_model.emotion_feature_dim,
             "video_feature_dim": multimodal_model.video_feature_dim,
             "video_backbone": "cnn3d",
+            "emotion_swap_prob": emotion_swap_prob,
             "emotion_dropout_prob": emotion_dropout_prob,
             "pose_dropout_prob": pose_dropout_prob,
             "aux_video_weight": aux_video_weight,
@@ -278,7 +314,10 @@ def main():
 
     print("=" * 60)
     print("Treinamento concluído!")
-    print(f"Melhor Val Acc: {best_val_acc:.2f}%")
+    if monitor_loader is not None:
+        print(f"Melhor monitor_score (val + val-swapped)/2: {best_val_acc:.2f}%")
+    else:
+        print(f"Melhor Val Acc: {best_val_acc:.2f}%")
     print(f"Modelo salvo em: {output_dir / 'best_model.pth'}")
     print("=" * 60)
 

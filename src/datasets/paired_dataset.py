@@ -53,6 +53,7 @@ class PairedSurveillanceDataset(MultimodalSurveillanceDataset):
         seed: int = 42,
         feature_stats: Optional[Dict] = None,
         emotion_swap_prob: float = 0.0,
+        force_emotion_swap: bool = False,
     ):
         self.paired_root = Path(paired_root) if paired_root else p.PAIRED_ROOT
         self.requested_cells = list(cells) if cells else None
@@ -82,7 +83,12 @@ class PairedSurveillanceDataset(MultimodalSurveillanceDataset):
 
         # Emotion-swap: com prob. p, substitui a face pela de label oposto
         # (augmentation de conflito ação×face; só no split de treino).
-        self.emotion_swap_prob = float(emotion_swap_prob) if split == "train" else 0.0
+        # force_emotion_swap: troca TODAS as faces (monitor val trocado em
+        # train_multimodal — único caso de uso fora do train).
+        if force_emotion_swap:
+            self.emotion_swap_prob = 1.0
+        else:
+            self.emotion_swap_prob = float(emotion_swap_prob) if split == "train" else 0.0
         self._emotion_bank: Dict[int, List[Path]] = {0: [], 1: []}
         if self.emotion_swap_prob > 0:
             for s in self.samples:
@@ -91,10 +97,16 @@ class PairedSurveillanceDataset(MultimodalSurveillanceDataset):
                     self._emotion_bank[s["face_label"]].append(path)
             n0, n1 = len(self._emotion_bank[0]), len(self._emotion_bank[1])
             if n0 == 0 or n1 == 0:
-                raise ValueError(
-                    f"emotion_swap_prob>0 exige faces dos dois labels no train "
-                    f"(bank: non_violent={n0}, violent={n1})"
+                if split == "train":
+                    raise ValueError(
+                        f"emotion_swap_prob>0 exige faces dos dois labels no split "
+                        f"'{split}' (bank: non_violent={n0}, violent={n1})"
+                    )
+                print(
+                    f"⚠️  force_emotion_swap desabilitado: split '{split}' não tem "
+                    f"faces dos dois labels (bank: non_violent={n0}, violent={n1})"
                 )
+                self.emotion_swap_prob = 0.0
 
     # ── Carregamento ────────────────────────────────────────────────────────
 
