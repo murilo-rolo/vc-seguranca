@@ -552,7 +552,7 @@ python run_evaluation.py \
     --model_path models/cnn3d/weights/best_model.pth
 ```
 
-Os resultados do CNN 3D são salvos em `results/cnn3d/`.
+Os resultados do CNN 3D são salvos em `results/cnn3d/` (`metrics/`, `charts/`, `evaluation_summary.json` — idem `results/multimodal/` para o modelo fusionado).
 
 #### 3.3. Avaliação por Sub-Modelo (F5)
 
@@ -601,13 +601,14 @@ python run_evaluation.py --model multimodal --model_path <modelo> --impact_study
 - `--robustness`: Testa robustez a distorções (blur, ruído, baixa iluminação, oclusão, variação de resolução)
 - `--performance`: Mede FPS, latência e uso de recursos
 - `--limitations`: Analisa falsos positivos, falsos negativos e casos limítrofes
-- `--charts`: Gera gráficos padronizados (barras accuracy/F1, heatmaps de confusão, curvas ROC/PR) em `results/charts/`
+- `--charts`: Gera gráficos padronizados — agregados entre modelos (barras accuracy/F1 e curvas ROC/PR compartilhadas) em `results/charts/` e heatmaps de confusão dos sub-modelos em `results/<modelo>/charts/`
 - `--impact_study`: Estudo de impacto das modalidades no modelo fusionado (perturba cada input com ruído gaussiano e mede o delta do logit e a queda de accuracy)
 - `--noise_std`: Desvio padrão do ruído no estudo de impacto (padrão: 0.05; `0` = sanity check)
-- `--experiment_name`: Nome do experimento (padrão: tipo do modelo)
+- `--experiment_name`: Nome do experimento (padrão: tipo do modelo; vira o nome da pasta em `results/`)
 
-Os resultados são salvos em `results/experiments/<experiment_name>/`, incluindo:
-- `metrics/` — relatórios de métricas, curvas ROC e PR
+Os resultados são salvos em `results/<experiment_name>/` (padrão: `results/<modelo>/`), incluindo:
+- `metrics/` — relatório de métricas (`<experiment_name>_metrics.json`)
+- `charts/` — curvas ROC, PR e matriz de confusão do modelo
 - `robustness/` — resultados por distorção e intensidade
 - `performance/` — benchmarks de FPS/latência
 - `limitations/` — exemplos de erros com imagens
@@ -652,15 +653,16 @@ python run_impact_study.py \
 - `--model_path`: Checkpoint do modelo multimodal (padrão: `models/multimodal/weights/best_model.pth`)
 - `--batch_size`: Tamanho do batch (padrão: 8)
 - `--output_dir`: Diretório de saída (padrão: `results/cross_label_impact/`)
-- `--charts`: Gera gráficos comparativos (barras de métricas, matrizes de confusão, delta de F1)
+- `--charts`: Gera gráficos comparativos (barras de métricas, matrizes de confusão, delta de F1, curvas ROC/PR por cenário)
 - `--skip_validate` (`run_impact_study.py`): Pula a validação dos symlinks do dataset pareado
 
 **Saída gerada em `results/cross_label_impact/`:**
-- `cross_label_report.json` — Relatório completo com métricas, `n_samples` e células por cenário
+- `cross_label_report.json` — Relatório completo com métricas, `n_samples`, células e curvas ROC/PR (`scenarios[*].roc_pr`) por cenário
 - `metrics_*.json` — Métricas individuais por cenário
 - `comparison_metrics.png` — Gráfico de barras comparativo (com `--charts`)
 - `confusion_matrices.png` — Matrizes de confusão lado a lado (com `--charts`)
 - `f1_delta.png` — Delta de F1 incongruente vs congruente (com `--charts`)
+- `roc_pr_curves.png` — Curvas ROC e Precision-Recall sobrepostas por cenário (com `--charts`)
 
 ### 4. Métricas de Avaliação
 
@@ -876,10 +878,12 @@ vc-seguranca/
 │   │   └── utils.py           # Aplicação de distorções e utilitários
 ├── configs/
 │   └── treino.toml            # Hiperparâmetros de treino (fonte única dos 3 modelos)
-├── results/                   # Resultados de experimentos
-│   ├── experiments/           # Resultados do run_evaluation.py
-│   ├── comparison/            # Comparação baseline vs multimodal
-│   └── reports/               # Relatórios
+├── results/                   # Resultados de avaliação (por modelo)
+│   ├── cnn3d/  multimodal/    # metrics/, charts/, robustness/, performance/, ...
+│   ├── video/  pose/  emotion/ # metrics.json (sub-modelos avaliados isolados)
+│   ├── charts/                # Gráficos agregados entre modelos (--charts)
+│   ├── cross_label_impact/    # Impact study cross-label (JSON, PNG, CSV)
+│   └── reports/               # Relatórios agregados
 ├── download_datasets.py       # Download dos datasets (Kaggle API)
 ├── train_*.py                 # Scripts de treinamento (raiz)
 ├── run_*.py                   # Scripts de execução (raiz)

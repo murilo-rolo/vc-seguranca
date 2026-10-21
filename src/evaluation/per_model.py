@@ -113,7 +113,7 @@ def run_per_model_evaluation(
                 for mtype, metrics in metrics_by_model.items()
             },
         }
-        report_dir = p.RESULTS_ROOT / "reports"
+        report_dir = p.REPORTS_ROOT
         report_dir.mkdir(parents=True, exist_ok=True)
         (report_dir / "per_model_evaluation.json").write_text(
             json.dumps(report, indent=2) + "\n"

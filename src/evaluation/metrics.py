@@ -214,29 +214,32 @@ class MetricsCalculator:
         y_pred: np.ndarray,
         y_proba: np.ndarray,
     ) -> None:
-        """Salva métricas (JSON) e gráficos (CM, ROC, PR)."""
+        """Salva métricas (JSON em metrics/) e gráficos (CM, ROC, PR em charts/)."""
         import json
 
         output_path = Path(output_dir)
-        output_path.mkdir(parents=True, exist_ok=True)
+        metrics_dir = output_path / "metrics"
+        charts_dir = output_path / "charts"
+        metrics_dir.mkdir(parents=True, exist_ok=True)
+        charts_dir.mkdir(parents=True, exist_ok=True)
 
-        metrics_file = output_path / f"{experiment_name}_metrics.json"
+        metrics_file = metrics_dir / f"{experiment_name}_metrics.json"
         with open(metrics_file, "w") as f:
             json.dump(metrics, f, indent=2)
 
         plot_confusion_matrix(
             confusion_matrix(y_true, y_pred, labels=list(range(self.num_classes))),
             self.class_names,
-            output_path / f"{experiment_name}_confusion_matrix.png",
+            charts_dir / f"{experiment_name}_confusion_matrix.png",
             title=f"{experiment_name} Confusion Matrix",
         )
 
         if y_proba is not None and self.num_classes <= 2:
             self._plot_roc_curve(
-                y_true, y_proba, experiment_name, output_path / f"{experiment_name}_roc_curve.png"
+                y_true, y_proba, experiment_name, charts_dir / f"{experiment_name}_roc_curve.png"
             )
             self._plot_pr_curve(
-                y_true, y_proba, experiment_name, output_path / f"{experiment_name}_pr_curve.png"
+                y_true, y_proba, experiment_name, charts_dir / f"{experiment_name}_pr_curve.png"
             )
 
     def _plot_roc_curve(self, y_true, y_proba, experiment_name, output_path):

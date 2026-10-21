@@ -28,6 +28,7 @@ from src.preprocessing.build_paired_dataset import (
 )
 
 from .metrics import MetricsCalculator
+from .model_loading import build_roc_pr
 
 SCENARIOS = [
     ("baseline (congruente)", list(CONGRUENT_CELLS)),
@@ -105,8 +106,13 @@ def evaluate_scenario(
     batch_size: int,
     paired_root: Optional[str] = None,
 ) -> dict:
-    metrics, _, _, _, n = evaluate_cells(model, cells, device, batch_size, paired_root)
-    return {"metrics": metrics, "n_samples": n, "cells": list(cells)}
+    metrics, y_true, _, y_proba, n = evaluate_cells(model, cells, device, batch_size, paired_root)
+    return {
+        "metrics": metrics,
+        "n_samples": n,
+        "cells": list(cells),
+        "roc_pr": build_roc_pr("multimodal", y_true, y_proba, 2, ["Non-Violent", "Violent"]),
+    }
 
 
 def run_scenarios(
@@ -180,7 +186,7 @@ def generate_confusion_matrix_summary(results: dict) -> str:
 
 
 def generate_charts(output_dir: Path, report: dict) -> List[Path]:
-    """Gera gráficos comparativos a partir do relatório (barras, CMs, ΔF1)."""
+    """Gera gráficos comparativos a partir do relatório (barras, CMs, ΔF1, ROC/PR)."""
     try:
         import matplotlib
         matplotlib.use("Agg")
@@ -294,6 +300,49 @@ def generate_charts(output_dir: Path, report: dict) -> List[Path]:
         written.append(delta_path)
         print(f"  ✓ {delta_path}")
 
+    # ── Gráfico 4: Curvas ROC e Precision-Recall por cenário ──────────────
+    roc_curves = {
+        s: report["scenarios"][s]["roc_pr"]
+        for s in scenarios
+        if report["scenarios"][s].get("roc_pr")
+    }
+    if roc_curves:
+        fig, (ax_roc, ax_pr) = plt.subplots(1, 2, figsize=(14, 6))
+
+        for scenario, curve in roc_curves.items():
+            fpr, tpr = curve.get("fpr", []), curve.get("tpr", [])
+            if fpr and tpr:
+                auc = curve.get("auc")
+                ax_roc.plot(fpr, tpr,
+                            label=f"{scenario} (AUC={auc:.3f})" if auc is not None else scenario)
+
+            precision, recall = curve.get("precision", []), curve.get("recall", [])
+            if precision and recall:
+                ap = curve.get("ap")
+                ax_pr.plot(recall, precision,
+                           label=f"{scenario} (AP={ap:.3f})" if ap is not None else scenario)
+
+        ax_roc.plot([0, 1], [0, 1], "k--", label="Random")
+        ax_roc.set_xlabel("False Positive Rate")
+        ax_roc.set_ylabel("True Positive Rate")
+        ax_roc.set_title("ROC — Impact Study (multimodal)")
+        ax_roc.legend(fontsize=7, loc="lower right")
+        ax_roc.grid(True, alpha=0.3)
+
+        ax_pr.set_xlabel("Recall")
+        ax_pr.set_ylabel("Precision")
+        ax_pr.set_ylim(0, 1.05)
+        ax_pr.set_title("Precision-Recall — Impact Study (multimodal)")
+        ax_pr.legend(fontsize=7, loc="lower left")
+        ax_pr.grid(True, alpha=0.3)
+
+        plt.tight_layout()
+        roc_path = output_dir / "roc_pr_curves.png"
+        fig.savefig(roc_path, dpi=150, bbox_inches="tight")
+        plt.close(fig)
+        written.append(roc_path)
+        print(f"  ✓ {roc_path}")
+
     return written
 
 
@@ -307,6 +356,7 @@ def build_report(all_results: dict, config: dict) -> dict:
                 "metrics": data["metrics"],
                 "n_samples": data["n_samples"],
                 "cells": data["cells"],
+                "roc_pr": data.get("roc_pr"),
             }
             for name, data in all_results.items()
         },

@@ -3,11 +3,14 @@ Geração padronizada de gráficos a partir de dicionários de métricas (F5).
 
 Função principal: `generate_report(metrics_by_model, out_dir)`.
 
-Produz, em `results/charts/`:
+Produz, em `results/charts/` (agregados entre modelos):
 - `accuracy_f1_bar.png`: barras de accuracy e F1 (macro) por modelo (uma figura).
-- `confusion_<model>.png`: heatmap da confusion matrix por modelo (quando disponível).
 - `roc_pr_curves.png`: curvas ROC e Precision-Recall em eixos compartilhados
   (quando curvas são fornecidas).
+
+Quando `confusion_out_dirs` é fornecido, o heatmap da confusion matrix de cada
+modelo vai para `results/<modelo>/charts/confusion_<model>.png`; sem ele, fica
+no mesmo `out_dir` dos agregados.
 
 Estrutura de `metrics_by_model`: `{nome_do_modelo: dict_de_metricas}` onde cada
 dict segue o formato de `MetricsCalculator` (ex: `accuracy`, `f1_score`,
@@ -131,7 +134,8 @@ def _plot_accuracy_f1_bar(metrics_by_model: Dict[str, Dict], out_dir: Path) -> P
 def _plot_confusion_matrices(
     metrics_by_model: Dict[str, Dict],
     out_dir: Path,
-    class_names_by_model: Optional[Dict[str, List[str]]] = None
+    class_names_by_model: Optional[Dict[str, List[str]]] = None,
+    confusion_out_dirs: Optional[Dict[str, Path]] = None,
 ) -> List[Path]:
     """Heatmap da confusion matrix por modelo (quando o array está presente)."""
     written: List[Path] = []
@@ -159,7 +163,8 @@ def _plot_confusion_matrices(
         ax.set_xlabel("Predicted")
         ax.set_ylabel("True")
         ax.set_title(f"Confusion Matrix — {model_name}")
-        written.append(_save(fig, out_dir, f"confusion_{model_name}.png"))
+        target = (confusion_out_dirs or {}).get(model_name) or out_dir
+        written.append(_save(fig, Path(target), f"confusion_{model_name}.png"))
     return written
 
 
@@ -209,16 +214,19 @@ def generate_report(
     metrics_by_model: Dict[str, Dict],
     out_dir: str,
     class_names_by_model: Optional[Dict[str, List[str]]] = None,
-    roc_pr: Optional[Dict[str, Dict]] = None
+    roc_pr: Optional[Dict[str, Dict]] = None,
+    confusion_out_dirs: Optional[Dict[str, Path]] = None,
 ) -> List[str]:
     """
     Gera o relatório gráfico padrão a partir de dicts de métricas.
 
     Args:
         metrics_by_model: {nome_do_modelo: dict_de_metricas}
-        out_dir: Diretório de saída (ex: "results/charts")
+        out_dir: Diretório dos agregados (ex: "results/charts")
         class_names_by_model: {nome_do_modelo: [nomes das classes]} (opcional)
         roc_pr: {nome_do_modelo: curva | [curvas]} (opcional)
+        confusion_out_dirs: {nome_do_modelo: dir} — destino do heatmap de
+            confusão de cada modelo (padrão: out_dir)
 
     Returns:
         Lista com os caminhos dos arquivos PNG gerados.
@@ -229,7 +237,10 @@ def generate_report(
 
     if metrics_by_model:
         written.append(_plot_accuracy_f1_bar(metrics_by_model, out))
-        written.extend(_plot_confusion_matrices(metrics_by_model, out, class_names_by_model))
+        written.extend(
+            _plot_confusion_matrices(metrics_by_model, out, class_names_by_model,
+                                     confusion_out_dirs)
+        )
 
     if roc_pr:
         written.append(_plot_roc_pr(roc_pr, out))

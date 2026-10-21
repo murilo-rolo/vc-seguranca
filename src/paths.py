@@ -22,13 +22,23 @@ POSE_ROOT         = DATA_ROOT / "pose"
 EMOTION_ROOT      = DATA_ROOT / "emotion"
 
 RESULTS_ROOT      = PROJECT_ROOT / "results"
-MODELS_ROOT       = RESULTS_ROOT / "models"
-MULTIMODAL_ROOT   = RESULTS_ROOT / "multimodal"
-CNN3D_ROOT        = RESULTS_ROOT / "cnn3d"
-EMOTION_MODELS_ROOT = RESULTS_ROOT / "emotion"
 REPORTS_ROOT      = RESULTS_ROOT / "reports"
-EXPERIMENTS_ROOT  = RESULTS_ROOT / "experiments"
-COMPARISON_ROOT   = RESULTS_ROOT / "comparison"
+
+# Raiz de resultados por modelo: results/<modelo>/{metrics,charts,...}
+MODEL_RESULTS_ROOTS = {
+    name: RESULTS_ROOT / name
+    for name in ("cnn3d", "multimodal", "video", "pose", "emotion")
+}
+
+# Gráficos agregados entre modelos (barras accuracy/F1, ROC/PR compartilhados)
+GLOBAL_CHARTS_ROOT = RESULTS_ROOT / "charts"
+
+
+def results_for_model(model: str, experiment_name=None) -> Path:
+    """Raiz de resultados de um modelo (experiment_name vira o nome da pasta)."""
+    if experiment_name:
+        return RESULTS_ROOT / str(experiment_name)
+    return MODEL_RESULTS_ROOTS[model]
 
 RWF2000_ROOT      = DATASET_ROOT / "RWF-2000"
 AFFECTNET_ROOT    = DATASET_ROOT / "AffectNet"

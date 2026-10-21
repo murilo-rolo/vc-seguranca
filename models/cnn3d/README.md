@@ -50,4 +50,4 @@ python run_evaluation.py \
     --model_path models/cnn3d/weights/best_model.pth
 ```
 
-As métricas, curvas ROC/PR e o resumo são salvos em `results/cnn3d/` (`metrics/`, `evaluation_summary.json`). O `--all` também inclui robustez a distorções, performance (FPS/latência) e análise de limitações.
+As métricas, curvas ROC/PR e o resumo são salvos em `results/cnn3d/` (`metrics/`, `charts/`, `evaluation_summary.json`), junto de `robustness/`, `performance/` e `limitations/` quando o `--all` é usado.

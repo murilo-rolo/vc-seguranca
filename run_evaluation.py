@@ -80,7 +80,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--limitations", action="store_true", help="Analisar limitações")
 
     parser.add_argument("--charts", action="store_true",
-                        help="Gerar gráficos padronizados em results/charts/")
+                        help="Gerar gráficos padronizados: agregados em results/charts/ "
+                             "e CMs de sub-modelos em results/<modelo>/charts/")
     parser.add_argument("--impact_study", action="store_true",
                         help="Executar estudo de impacto das modalidades no modelo fusionado")
     parser.add_argument("--noise_std", type=float, default=0.05,
@@ -105,10 +106,8 @@ def _resolve_experiments(args) -> tuple:
 
 
 def _output_root(model: str, experiment_name: str):
-    """CNN3D salva em results/cnn3d/; demais em experiments/<nome>/."""
-    if model == "cnn3d":
-        return p.CNN3D_ROOT, "cnn3d"
-    return p.EXPERIMENTS_ROOT / experiment_name, "multimodal"
+    """Raiz results/<experiment_name|modelo>/; prefixo dos arquivos gerados."""
+    return p.results_for_model(model, experiment_name), experiment_name
 
 
 def _run_full_model_experiments(args, run_metrics, run_robustness, run_performance, run_limitations):
@@ -148,8 +147,8 @@ def _run_full_model_experiments(args, run_metrics, run_robustness, run_performan
         evaluator = RobustnessEvaluator(model, test_loader, device=args.device)
         results["robustness"] = evaluator.evaluate_all_distortions(
             DEFAULT_DISTORTION_CONFIGS,
-            str(p.EXPERIMENTS_ROOT),
-            f"{args.experiment_name}/robustness",
+            str(summary_root),
+            "robustness",
         )
         print("✓ Robustness tests completed")
 
@@ -157,8 +156,8 @@ def _run_full_model_experiments(args, run_metrics, run_robustness, run_performan
         print("\n" + "=" * 60 + "\n3. Evaluating Performance\n" + "=" * 60)
         evaluator = PerformanceEvaluator(model, test_loader, device=args.device)
         results["performance"] = evaluator.evaluate_all(
-            str(p.EXPERIMENTS_ROOT),
-            f"{args.experiment_name}/performance",
+            str(summary_root),
+            "performance",
         )
         print("✓ Performance evaluation completed")
 
@@ -166,8 +165,8 @@ def _run_full_model_experiments(args, run_metrics, run_robustness, run_performan
         print("\n" + "=" * 60 + "\n4. Analyzing Limitations\n" + "=" * 60)
         analyzer = LimitationsAnalyzer(model, test_loader, device=args.device)
         results["limitations"] = analyzer.generate_error_report(
-            str(p.EXPERIMENTS_ROOT),
-            f"{args.experiment_name}/limitations",
+            str(summary_root),
+            "limitations",
         )
         print("✓ Limitations analysis completed")
 
@@ -189,7 +188,7 @@ def main():
     print("=" * 60)
     print(f"Model: {args.model}")
     print(f"Model Path: {args.model_path}")
-    print(f"Output Dir: {p.EXPERIMENTS_ROOT}")
+    print(f"Output Dir: {p.results_for_model(args.model, args.experiment_name)}")
     print(f"Experiment Name: {args.experiment_name}")
     print(f"Device: {args.device}")
     print()
@@ -241,16 +240,24 @@ def main():
                 model,
                 dataloader=test_loader,
                 noise_std=args.noise_std,
-                output_dir=str(p.EXPERIMENTS_ROOT / args.experiment_name),
+                output_dir=str(p.results_for_model(args.model, args.experiment_name)),
                 experiment_name="impact_study",
             )
 
     if args.charts and metrics_by_model:
+        # Heatmaps por modelo: sub-modelos não passam pelo save_results; o modelo
+        # completo avaliado já gravou seu CM em <raiz>/charts/ (MetricsCalculator).
+        confusion_dirs = {
+            name: p.results_for_model(name) / "charts"
+            for name in metrics_by_model
+            if not (is_full_model and name == args.model)
+        }
         written = generate_report(
             metrics_by_model,
-            str(p.RESULTS_ROOT / "charts"),
+            str(p.GLOBAL_CHARTS_ROOT),
             class_names_by_model,
             roc_pr_data,
+            confusion_out_dirs=confusion_dirs,
         )
         print("\n" + "=" * 60)
         print("Gráficos gerados:")
