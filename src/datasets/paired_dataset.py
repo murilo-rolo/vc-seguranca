@@ -18,6 +18,7 @@ import numpy as np
 import torch
 
 from src import paths as p
+from src.datasets.feature_stats import normalize_features
 from src.datasets.multimodal_dataset import MultimodalSurveillanceDataset
 from src.preprocessing.build_paired_dataset import CELLS, MANIFEST_NAME
 
@@ -50,6 +51,8 @@ class PairedSurveillanceDataset(MultimodalSurveillanceDataset):
         pose_mode: str = "keypoints",
         transform: Optional[Callable] = None,
         seed: int = 42,
+        feature_stats: Optional[Dict] = None,
+        emotion_swap_prob: float = 0.0,
     ):
         self.paired_root = Path(paired_root) if paired_root else p.PAIRED_ROOT
         self.requested_cells = list(cells) if cells else None
@@ -73,6 +76,25 @@ class PairedSurveillanceDataset(MultimodalSurveillanceDataset):
             transform=transform,
             seed=seed,
         )
+
+        # Normalização de features com stats do train (mean/std por dimensão).
+        self.feature_stats = feature_stats
+
+        # Emotion-swap: com prob. p, substitui a face pela de label oposto
+        # (augmentation de conflito ação×face; só no split de treino).
+        self.emotion_swap_prob = float(emotion_swap_prob) if split == "train" else 0.0
+        self._emotion_bank: Dict[int, List[Path]] = {0: [], 1: []}
+        if self.emotion_swap_prob > 0:
+            for s in self.samples:
+                path = s["pair_dir"] / "emotion.npy"
+                if path.exists():
+                    self._emotion_bank[s["face_label"]].append(path)
+            n0, n1 = len(self._emotion_bank[0]), len(self._emotion_bank[1])
+            if n0 == 0 or n1 == 0:
+                raise ValueError(
+                    f"emotion_swap_prob>0 exige faces dos dois labels no train "
+                    f"(bank: non_violent={n0}, violent={n1})"
+                )
 
     # ── Carregamento ────────────────────────────────────────────────────────
 
@@ -165,16 +187,35 @@ class PairedSurveillanceDataset(MultimodalSurveillanceDataset):
                 video = video.unsqueeze(0)
 
         pose_path = pair_dir / "pose.npy"
-        if pose_path.exists():
+        has_real_pose = pose_path.exists()
+        if has_real_pose:
             pose = torch.from_numpy(np.load(pose_path)).float()
         else:
             pose = self._pose_default()
         if self.pose_mode == "flatten":
             pose = pose.reshape(pose.shape[0], -1)
 
-        emotion = torch.from_numpy(np.load(pair_dir / "emotion.npy")).float()
+        emotion_path = pair_dir / "emotion.npy"
+        if self.emotion_swap_prob > 0 and torch.rand(()) < self.emotion_swap_prob:
+            other = 1 - sample["face_label"]
+            bank = self._emotion_bank[other]
+            emotion_path = bank[int(torch.randint(len(bank), (1,)))]
+        emotion = torch.from_numpy(np.load(emotion_path)).float()
         if emotion.ndim == 1:
             emotion = emotion.reshape(1, -1)
+
+        if self.feature_stats is not None:
+            # pose ausente (zeros) não é normalizada — zeros já significam "missing".
+            if has_real_pose and "pose" in self.feature_stats:
+                if pose.ndim == 3:
+                    joints = pose.shape[1]
+                    pose = normalize_features(
+                        pose.reshape(pose.shape[0], -1), self.feature_stats["pose"]
+                    ).reshape(pose.shape[0], joints, -1)
+                else:
+                    pose = normalize_features(pose, self.feature_stats["pose"])
+            if "emotion" in self.feature_stats:
+                emotion = normalize_features(emotion, self.feature_stats["emotion"])
 
         video, pose, emotion = self._create_windows(video, pose, emotion)
 
@@ -197,12 +238,17 @@ def get_paired_dataloaders(
     val_transform: Optional[Callable] = None,
     seed: int = 42,
     test_cells: Optional[List[str]] = None,
+    feature_stats: Optional[Dict] = None,
+    emotion_swap_prob: float = 0.0,
 ):
     """
     Cria DataLoaders (train, val, test) do dataset pareado.
 
     test_cells: filtra o split de teste por célula (impact study);
                 None = todas as células.
+    feature_stats: mean/std por dimensão (src.datasets.feature_stats) aplicado
+                   a pose/emotion em todos os splits.
+    emotion_swap_prob: prob. de trocar a face pela de label oposto (só train).
     """
     from torch.utils.data import DataLoader
 
@@ -224,6 +270,8 @@ def get_paired_dataloaders(
             pose_mode=pose_mode,
             transform=transform,
             seed=seed,
+            feature_stats=feature_stats,
+            emotion_swap_prob=emotion_swap_prob,
         )
 
     train_dataset = _make("train", train_transform)

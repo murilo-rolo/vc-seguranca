@@ -141,6 +141,8 @@ def generate_comparison_table(results: dict) -> str:
 
     for scenario, data in results.items():
         m = data["metrics"]
+        auc = m.get("auc_roc")
+        auc_str = f"{auc:>10.4f}" if auc is not None else f"{'n/a':>10}"
         lines.append(
             f"{scenario:<35} "
             f"{data['n_samples']:>5} "
@@ -148,7 +150,7 @@ def generate_comparison_table(results: dict) -> str:
             f"{m['f1_score']['macro']:>10.4f} "
             f"{m['precision']['macro']:>10.4f} "
             f"{m['recall']['macro']:>10.4f} "
-            f"{m.get('auc_roc', 0.0):>10.4f}"
+            f"{auc_str}"
         )
 
     lines.append(sep)

@@ -261,7 +261,7 @@ def build_ablation_models(
 
     multimodal = create_multimodal_model(
         video_feature_dim=dims.get("video_feature_dim", 512),
-        pose_feature_dim=51,
+        pose_feature_dim=dims["pose_feature_dim"],
         emotion_feature_dim=128,
         num_frames=16,
         fusion_method="cross_attention",

@@ -54,6 +54,17 @@ DEFAULTS: Dict[str, Dict[str, Any]] = {
         "window_size": 16,
         "use_temporal_modeling": False,
         "video_model_path": str(p.CNN3D_WEIGHTS / "best_model.pth"),
+        # Reprodutibilidade / regularização
+        "seed": 42,
+        "weight_decay": 1e-4,
+        "label_smoothing": 0.1,
+        "early_stop_patience": 8,
+        # Mitigação do atalho facial (cross-label)
+        "normalize_features": True,
+        "emotion_swap_prob": 0.3,
+        "emotion_dropout_prob": 0.3,
+        "pose_dropout_prob": 0.0,
+        "aux_video_weight": 0.3,
     },
 }
 

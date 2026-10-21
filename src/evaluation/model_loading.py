@@ -8,6 +8,7 @@ load_model por tipo e montagem de curvas ROC/PR.
 
 from typing import Any, Dict, List, Optional
 
+import numpy as np
 import torch
 import torch.nn as nn
 from sklearn.metrics import (
@@ -169,14 +170,25 @@ def load_model(
                 "o projeto usa apenas 'cnn3d'."
             )
         video_feature_dim = checkpoint.get("video_feature_dim") or 512
+        # Dim da pose inferida do checkpoint (nº de juntas varia por dataset).
+        state = checkpoint.get("model_state_dict", checkpoint)
+        pose_feature_dim = _infer_pose_submodel_dims(state)["pose_feature_dim"]
+        # Flags de robustez (modal dropout/aux head) gravadas no treino;
+        # ausentes em checkpoints antigos -> defaults 0 (sem chaves novas).
+        emotion_dropout_prob = checkpoint.get("emotion_dropout_prob", 0.0)
+        pose_dropout_prob = checkpoint.get("pose_dropout_prob", 0.0)
+        aux_video_weight = checkpoint.get("aux_video_weight", 0.0)
 
         model = create_multimodal_model(
             video_feature_dim=video_feature_dim,
-            pose_feature_dim=51,
+            pose_feature_dim=pose_feature_dim,
             emotion_feature_dim=128,
             num_frames=16,
             fusion_method=fusion_method,
             use_temporal_modeling=use_temporal,
+            emotion_dropout_prob=emotion_dropout_prob,
+            pose_dropout_prob=pose_dropout_prob,
+            aux_video_weight=aux_video_weight,
             device=device,
         )
         if "model_state_dict" in checkpoint:
@@ -299,6 +311,15 @@ def build_roc_pr(
 
 
 def _roc_pr_curve(y_true, y_score) -> Dict[str, Any]:
+    y_true = np.asarray(y_true)
+    empty: Dict[str, Any] = {
+        "fpr": [], "tpr": [], "precision": [], "recall": [],
+        "auc": None, "ap": None, "label": "",
+    }
+    # Células single-class: ROC/AP degenerados (auc nan / ap 0 ou 1 trivial).
+    if np.unique(y_true).size < 2:
+        return empty
+
     fpr, tpr, _ = roc_curve(y_true, y_score)
     precision, recall, _ = precision_recall_curve(y_true, y_score)
     curve: Dict[str, Any] = {

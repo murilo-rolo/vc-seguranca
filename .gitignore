@@ -52,6 +52,9 @@ models/**/weights/**/*.pt
 models/**/weights/*.npy
 models/**/weights/*.png
 
+# Stats de features derivadas do train (regeneráveis)
+models/**/feature_stats.json
+
 # Model experiments (logs, metrics)
 models/**/experiments/*.json
 models/**/experiments/*.npy
