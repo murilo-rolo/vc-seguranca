@@ -140,7 +140,7 @@ class EmotionFusionSubModel(nn.Module):
         )
         self.classifier = nn.Linear(fusion_dim // 2, num_classes)
 
-    def forward(self, video=None, pose=None, emotion=None):
+    def forward(self, emotion, video=None, pose=None):
         if emotion.dim() == 2:
             emotion = emotion.unsqueeze(1)
         if isinstance(self.emotion_processor, nn.LSTM):
