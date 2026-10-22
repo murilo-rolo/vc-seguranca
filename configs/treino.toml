@@ -44,10 +44,14 @@ window_size = 16
 use_temporal_modeling = false
 video_model_path = "models/cnn3d/weights/best_model.pth"
 
-# Fine-tune do backbone CNN3D junto com a fusão (Fase F).
+# Fine-tune do backbone CNN3D junto com a fusão (Fase F/B).
 # false = comportamento antigo (backbone congelado, features via no_grad).
 finetune_backbone = true
 backbone_lr = 1e-5
+# Fine-tune em 2 estágios (Fase B): head_only_epochs épocas só com a fusão,
+# depois o backbone destrava com weight decay maior.
+head_only_epochs = 5
+backbone_weight_decay = 1e-3
 
 # Reprodutibilidade / regularização
 seed = 42

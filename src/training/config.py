@@ -58,8 +58,13 @@ DEFAULTS: Dict[str, Dict[str, Any]] = {
         # finetune_backbone=false restaura o comportamento antigo (congelado,
         # no_grad na extração de features). backbone_lr = lr do grupo do
         # backbone (10× menor que o da fusão por padrão).
+        # Fase B: fine-tune em 2 estágios — head_only_epochs épocas só com a
+        # fusão (backbone congelado, BN em eval), depois o backbone destrava;
+        # backbone_weight_decay maior segura o overfit na fase 2.
         "finetune_backbone": True,
         "backbone_lr": 1e-5,
+        "head_only_epochs": 5,
+        "backbone_weight_decay": 1e-3,
         # Reprodutibilidade / regularização
         "seed": 42,
         "weight_decay": 1e-4,

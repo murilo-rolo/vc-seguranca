@@ -7,7 +7,11 @@ from torch.utils.data import DataLoader, TensorDataset
 
 from src.evaluation.inference import collect_predictions
 from src.evaluation.metrics import MetricsCalculator
-from src.evaluation.threshold import DEFAULT_THRESHOLD, calibrate_threshold
+from src.evaluation.threshold import (
+    DEFAULT_THRESHOLD,
+    calibrate_threshold,
+    calibrate_threshold_per_subset,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -60,6 +64,85 @@ def test_calibrate_spec_target_infeasible_fallback_maximin():
     assert result["criterion"] == "maximin"
     assert min(result["recall"], result["spec"]) == pytest.approx(0.8)
     assert 0.4 < result["threshold"] <= 0.5
+
+
+# ---------------------------------------------------------------------------
+# calibrate_threshold_per_subset (D4c)
+# ---------------------------------------------------------------------------
+
+
+def _hard_subsets():
+    """Dois subsets: A perfeito e B com spec baixa na faixa de recall 1.
+
+    No t ≈ 0.71 o pooled tem spec 0.9 (mascarado pelo A), mas o B tem só
+    spec 0.70 — exatamente o problema da Fase F (val limpo fácil esconde
+    o val_swap no critério poolado).
+    """
+    y_a = [0] * 20 + [1] * 20
+    s_a = [0.1] * 20 + [0.9] * 20
+    y_b = [0] * 10 + [1] * 10
+    s_b = [0.7] * 7 + [0.8, 0.9, 0.95] + [0.75] * 8 + [0.96, 0.97]
+    return (y_a, s_a), (y_b, s_b)
+
+
+def test_per_subset_forca_spec_no_subset_dificil():
+    subset_a, subset_b = _hard_subsets()
+    result = calibrate_threshold_per_subset(
+        [subset_a, subset_b], spec_target=0.73,
+    )
+    assert result["criterion"] == "per_subset_spec_constrained"
+    # Ambos os subsets cumprem a constraint no limiar escolhido.
+    for subset in result["per_subset"]:
+        assert subset["spec"] >= 0.73
+    # O subset difícil dita o recall mínimo (sobe o t p/ proteger o spec);
+    # t fica em (0.8, 0.9] — acima de 0.9 o recall do A (pos=0.9) cai a 0.
+    assert result["min_recall"] == pytest.approx(0.2)
+    assert 0.80 < result["threshold"] <= 0.90
+
+    # O pooled NO MESMO DADOS escolhe t mais baixo e deixa o difícil
+    # abaixo do alvo — é o bug que o per-subset corrige.
+    y_pool = list(subset_a[0]) + list(subset_b[0])
+    s_pool = list(subset_a[1]) + list(subset_b[1])
+    pooled = calibrate_threshold(y_pool, s_pool, spec_target=0.73)
+    assert pooled["threshold"] < 0.80
+    y_b = np.asarray(subset_b[0])
+    spec_b = float(((np.asarray(subset_b[1]) < pooled["threshold"]) & (y_b == 0)).sum()) / 10
+    assert spec_b < 0.73  # pooled mascara; per-subset não
+
+
+def test_per_subset_fallback_maximin_quando_inviavel():
+    subset_a, subset_b = _hard_subsets()
+    result = calibrate_threshold_per_subset(
+        [subset_a, subset_b], spec_target=1.5,
+    )
+    assert result["criterion"] == "per_subset_maximin"
+    # Melhor ponto balanceado: t ∈ (0.7, 0.75] → min spec 0.7/recall 1.
+    assert 0.70 < result["threshold"] <= 0.75
+    assert min(result["min_recall"], result["min_spec"]) == pytest.approx(0.7)
+
+
+def test_per_subset_single_class_exclui_metrica():
+    subset_a, subset_b = _hard_subsets()
+    # Subset C sem negativos: spec None, não participa da constraint.
+    y_c = [1, 1, 1, 1]
+    s_c = [0.6, 0.7, 0.8, 0.9]
+    result = calibrate_threshold_per_subset(
+        [subset_a, subset_b, (y_c, s_c)], spec_target=0.73,
+    )
+    assert result["per_subset"][2]["spec"] is None
+    assert result["per_subset"][2]["recall"] is not None
+    for subset in result["per_subset"][:2]:
+        assert subset["spec"] >= 0.73
+
+
+def test_per_subset_rejeita_todos_single_class():
+    with pytest.raises(ValueError, match="single-class"):
+        calibrate_threshold_per_subset([([1, 1], [0.2, 0.9])])
+
+
+def test_per_subset_rejeita_subset_vazio():
+    with pytest.raises(ValueError, match="vazio"):
+        calibrate_threshold_per_subset([([], []), ([0, 1], [0.2, 0.9])])
 
 
 def test_calibrate_single_class_fallback():

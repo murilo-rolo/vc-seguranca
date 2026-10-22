@@ -49,17 +49,41 @@ class MultimodalWithVideoBackbone(nn.Module):
     """Encapsula extração de features de vídeo (CNN 3D) + forward multimodal.
 
     finetune_backbone=False: extração sem grad (backbone congelado, Fase E).
-    True (Fase F): grad flui para o CNN3D, que é fine-tuned com a fusão.
+    True (Fase F): grad flui para o CNN3D, fine-tuned com a fusão.
+    head_only (Fase B): fase 1 do fine-tune em 2 estágios — backbone
+    congelado (requires_grad=False, BN em eval) enquanto a fusão aprende;
+    unfreeze_backbone() destrava p/ a fase 2.
     """
 
-    def __init__(self, multimodal_model, video_model, finetune_backbone: bool = True):
+    def __init__(self, multimodal_model, video_model,
+                 finetune_backbone: bool = True, head_only: bool = False):
         super().__init__()
         self.multimodal = multimodal_model
         self.video_model = video_model
         self.finetune_backbone = finetune_backbone
+        self.head_only = bool(head_only and finetune_backbone)
+        if self.head_only:
+            self._set_backbone_requires_grad(False)
+
+    def _set_backbone_requires_grad(self, requires_grad: bool) -> None:
+        for param in self.video_model.parameters():
+            param.requires_grad = requires_grad and self.finetune_backbone
+
+    def unfreeze_backbone(self) -> None:
+        """Destrava o backbone (fase 2 do fine-tune em 2 estágios)."""
+        self.head_only = False
+        self._set_backbone_requires_grad(True)
+
+    def train(self, mode: bool = True):
+        # run_epoch chama model.train(True) a cada época; na fase head-only
+        # o vídeo deve permanecer em eval (BN congelado) mesmo assim.
+        super().train(mode)
+        if self.head_only:
+            self.video_model.eval()
+        return self
 
     def forward(self, video, pose, emotion, return_aux: bool = False):
-        with torch.set_grad_enabled(self.finetune_backbone):
+        with torch.set_grad_enabled(self.finetune_backbone and not self.head_only):
             if video.dim() == 5:
                 video = self.video_model.get_features(ensure_channels_first(video))
         return self.multimodal(video, pose, emotion, return_aux=return_aux)
@@ -231,6 +255,9 @@ def main():
     emotion_swap_prob = cfg.get("emotion_swap_prob", 0.0)
     finetune_backbone = cfg.get("finetune_backbone", True)
     backbone_lr = cfg.get("backbone_lr", 1e-5)
+    weight_decay = cfg.get("weight_decay", 0.0)
+    backbone_weight_decay = cfg.get("backbone_weight_decay", weight_decay)
+    head_only_epochs = cfg.get("head_only_epochs", 0) if finetune_backbone else 0
 
     print("=" * 60)
     print("Treinamento do Modelo Multimodal")
@@ -243,8 +270,14 @@ def main():
           f"drop(emotion)={emotion_dropout_prob} drop(pose)={pose_dropout_prob} "
           f"aux_video={aux_video_weight} "
           f"norm={cfg.get('normalize_features', False)}")
-    print(f"Backbone CNN3D: "
-          f"{'FINE-TUNE (lr=' + format(backbone_lr, '.0e') + ')' if finetune_backbone else 'congelado (comportamento Fase E)'}")
+    if not finetune_backbone:
+        print("Backbone CNN3D: congelado (comportamento Fase E)")
+    elif head_only_epochs > 0:
+        print(f"Backbone CNN3D: FINE-TUNE 2 ESTÁGIOS "
+              f"(head-only {head_only_epochs} ép → lr={backbone_lr:.0e}, "
+              f"wd={backbone_weight_decay:.0e})")
+    else:
+        print(f"Backbone CNN3D: FINE-TUNE direto (lr={backbone_lr:.0e})")
     print("=" * 60)
 
     print("Carregando modelo de vídeo...")
@@ -341,6 +374,7 @@ def main():
     model = MultimodalWithVideoBackbone(
         multimodal_model, video_model,
         finetune_backbone=finetune_backbone,
+        head_only=head_only_epochs > 0,
     ).to(torch.device(cfg["device"]))
 
     if aux_video_weight > 0:
@@ -355,16 +389,16 @@ def main():
             label_smoothing=cfg.get("label_smoothing", 0.0)
         )
 
-    weight_decay = cfg.get("weight_decay", 0.0)
     if finetune_backbone:
         optimizer = optim.Adam([
             {"params": video_model.parameters(), "lr": backbone_lr,
-             "weight_decay": weight_decay},
+             "weight_decay": backbone_weight_decay},
             {"params": multimodal_model.parameters(), "lr": cfg["learning_rate"],
              "weight_decay": weight_decay},
         ])
-        print(f"Otimizer: 2 grupos (backbone lr={backbone_lr:.0e}, "
-              f"fusão lr={cfg['learning_rate']:.0e})")
+        print(f"Otimizer: 2 grupos (backbone lr={backbone_lr:.0e} "
+              f"wd={backbone_weight_decay:.0e}, "
+              f"fusão lr={cfg['learning_rate']:.0e} wd={weight_decay:.0e})")
     else:
         optimizer = optim.Adam(
             multimodal_model.parameters(),
@@ -372,6 +406,12 @@ def main():
             weight_decay=weight_decay,
         )
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=15, gamma=0.1)
+
+    def _on_epoch_start(epoch: int) -> None:
+        if head_only_epochs > 0 and epoch == head_only_epochs + 1:
+            model.unfreeze_backbone()
+            print(f"\n→ Backbone CNN3D destravado — fase 2 de fine-tune "
+                  f"(época {epoch})")
 
     best_val_acc, _ = train_loop(
         train_model, train_loader, val_loader,
@@ -382,6 +422,7 @@ def main():
         early_stop_patience=cfg.get("early_stop_patience"),
         checkpoint_model=multimodal_model,
         monitor_loader=monitor_loader,
+        on_epoch_start=_on_epoch_start,
         checkpoint_extra={
             "fusion_method": "cross_attention",
             "use_temporal_modeling": cfg["use_temporal_modeling"],
@@ -394,6 +435,7 @@ def main():
             "aux_video_weight": aux_video_weight,
             "normalize_features": cfg.get("normalize_features", False),
             "finetune_backbone": finetune_backbone,
+            "head_only_epochs": head_only_epochs,
             # Pesos do backbone no momento da época vencedora (referências
             # vivas serializadas no save) — avaliação recarrega isto.
             "video_model_state_dict": video_model.state_dict(),
