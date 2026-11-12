@@ -6,19 +6,7 @@ from typing import Optional, Literal
 
 import torch
 import torch.nn as nn
-
-try:
-    import torchvision.models.video as video_models
-    HAS_VIDEO_MODELS = True
-except ImportError:
-    HAS_VIDEO_MODELS = False
-    print("Aviso: torchvision.models.video não disponível. Use torchvision >= 0.13.0")
-
-_AVAILABLE_MODELS = {
-    "r3d_18": "R3D_18_Kinetics400_Weights",
-    "r2plus1d_18": "R2Plus1D_18_Kinetics400_Weights",
-    "mc3_18": "MC3_18_Kinetics400_Weights",
-}
+import torchvision.models.video as video_models
 
 
 def ensure_channels_first(x: torch.Tensor) -> torch.Tensor:
@@ -32,15 +20,6 @@ def ensure_channels_first(x: torch.Tensor) -> torch.Tensor:
 
 
 def _create_backbone(model_name: str, pretrained: bool) -> nn.Module:
-    if not HAS_VIDEO_MODELS:
-        raise ImportError(
-            "torchvision.models.video não disponível. "
-            "Instale torchvision >= 0.13.0: pip install torchvision>=0.13.0"
-        )
-    if model_name not in _AVAILABLE_MODELS:
-        raise ValueError(
-            f"Modelo não suportado: {model_name}. Opções: {list(_AVAILABLE_MODELS.keys())}"
-        )
     constructor = getattr(video_models, model_name)
     weights = None
     if pretrained:
