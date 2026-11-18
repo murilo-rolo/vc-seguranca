@@ -8,7 +8,6 @@ Mitigação do atalho facial (cross-label):
   (--cross-label-train-ratio) e val com 4 células; seleção por val_acc
 - emotion_swap_prob: swap estocástico (0 por padrão, pares explícitos bastam)
 - emotion_dropout_prob/pose_dropout_prob: modal dropout (tokens learnable)
-- aux_video_weight: loss auxiliar sobre o token de vídeo pré-atenção
 - normalize_features: normaliza emotion/pose com stats do train
 - finetune_backbone (Fase F): fine-tune do CNN3D junto com a fusão
   (backbone_lr 10× menor); pesos do backbone salvos no best_model.pth
@@ -204,7 +203,6 @@ def main():
     output_dir = p.MULTIMODAL_WEIGHTS
     experiments_dir = p.MULTIMODAL_EXPERIMENTS
 
-    aux_video_weight = cfg.get("aux_video_weight", 0.0)
     emotion_dropout_prob = cfg.get("emotion_dropout_prob", 0.0)
     pose_dropout_prob = cfg.get("pose_dropout_prob", 0.0)
     emotion_swap_prob = cfg.get("emotion_swap_prob", 0.0)
@@ -223,7 +221,6 @@ def main():
           f"Batch: {cfg['batch_size']} | LR: {cfg['learning_rate']}")
     print(f"Mitigação de atalho: swap={emotion_swap_prob} "
           f"drop(emotion)={emotion_dropout_prob} drop(pose)={pose_dropout_prob} "
-          f"aux_video={aux_video_weight} "
           f"norm={cfg.get('normalize_features', False)}")
     if not finetune_backbone:
         print("Backbone CNN3D: congelado (comportamento Fase E)")
@@ -298,7 +295,6 @@ def main():
         use_temporal_modeling=cfg["use_temporal_modeling"],
         emotion_dropout_prob=emotion_dropout_prob,
         pose_dropout_prob=pose_dropout_prob,
-        aux_video_weight=aux_video_weight,
         device=cfg["device"],
     )
     model = MultimodalWithVideoBackbone(
@@ -307,17 +303,10 @@ def main():
         head_only=head_only_epochs > 0,
     ).to(torch.device(cfg["device"]))
 
-    if aux_video_weight > 0:
-        train_model = AuxTrainWrapper(model, aux_video_weight).to(torch.device(cfg["device"]))
-        criterion = AuxCrossEntropyLoss(
-            aux_video_weight, train_model,
-            label_smoothing=cfg.get("label_smoothing", 0.0),
-        )
-    else:
-        train_model = model
-        criterion = nn.CrossEntropyLoss(
-            label_smoothing=cfg.get("label_smoothing", 0.0)
-        )
+    train_model = model
+    criterion = nn.CrossEntropyLoss(
+        label_smoothing=cfg.get("label_smoothing", 0.0)
+    )
 
     if finetune_backbone:
         optimizer = optim.Adam([
@@ -351,7 +340,6 @@ def main():
         model_hook=_multimodal_hook, config=cfg,
         early_stop_patience=cfg.get("early_stop_patience"),
         checkpoint_model=multimodal_model,
-        on_epoch_start=_on_epoch_start,
         checkpoint_extra={
             "fusion_method": "cross_attention",
             "use_temporal_modeling": cfg["use_temporal_modeling"],
@@ -362,7 +350,6 @@ def main():
             "emotion_swap_prob": emotion_swap_prob,
             "emotion_dropout_prob": emotion_dropout_prob,
             "pose_dropout_prob": pose_dropout_prob,
-            "aux_video_weight": aux_video_weight,
             "normalize_features": cfg.get("normalize_features", False),
             "finetune_backbone": finetune_backbone,
             "head_only_epochs": head_only_epochs,

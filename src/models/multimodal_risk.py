@@ -66,7 +66,6 @@ class MultimodalRiskDetector(nn.Module):
         temporal_hidden_size: int = 64,
         emotion_dropout_prob: float = 0.0,
         pose_dropout_prob: float = 0.0,
-        aux_video_weight: float = 0.0,
     ):
         if fusion_method != "cross_attention":
             raise ValueError(
@@ -84,7 +83,6 @@ class MultimodalRiskDetector(nn.Module):
         self.use_temporal_modeling = use_temporal_modeling
         self.emotion_dropout_prob = float(emotion_dropout_prob)
         self.pose_dropout_prob = float(pose_dropout_prob)
-        self.aux_video_weight = float(aux_video_weight)
 
         self.video_proj = nn.Linear(video_feature_dim, fusion_dim)
 
@@ -119,14 +117,12 @@ class MultimodalRiskDetector(nn.Module):
         )
         self.classifier = nn.Linear(fusion_dim // 2, num_classes)
 
-        # Tokens "modality ausente" (modal dropout) e head auxiliar só-vídeo.
+        # Tokens "modality ausente" (modal dropout).
         # Só criados quando ativos — checkpoints antigos seguem com load estrito.
         if self.emotion_dropout_prob > 0:
             self.emotion_missing_token = nn.Parameter(torch.zeros(fusion_dim))
         if self.pose_dropout_prob > 0:
             self.pose_missing_token = nn.Parameter(torch.zeros(fusion_dim))
-        if self.aux_video_weight > 0:
-            self.video_aux_head = nn.Linear(fusion_dim, num_classes)
 
         self._initialize_weights()
 
@@ -213,13 +209,6 @@ class MultimodalRiskDetector(nn.Module):
             tokens, 1, self.pose_dropout_prob,
             getattr(self, "pose_missing_token", None))
 
-        # Head auxiliar sobre o token de vídeo pré-atenção: força a stream de
-        # vídeo a ser preditiva por si (deep supervision, só no treino).
-        video_token = tokens[:, 0]
-        aux_logits = None
-        if self.aux_video_weight > 0:
-            aux_logits = self.video_aux_head(video_token)
-
         # Cada modalidade atende a concatenação das outras duas.
         attended = []
         for i, attn in enumerate(
@@ -232,12 +221,6 @@ class MultimodalRiskDetector(nn.Module):
         fused = self.fusion_layers(torch.cat(attended, dim=1).mean(dim=1))
         logits = self.classifier(fused)
 
-        if return_aux:
-            if aux_logits is None:
-                raise ValueError(
-                    "return_aux=True exige aux_video_weight > 0 no construtor."
-                )
-            return logits, aux_logits
         return logits
 
 

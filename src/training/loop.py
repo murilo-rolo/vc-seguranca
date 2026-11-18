@@ -40,7 +40,6 @@ def train_loop(
     best_val_acc: float = -1.0,
     checkpoint_extra: Optional[Dict[str, Any]] = None,
     checkpoint_model: Optional[torch.nn.Module] = None,
-    on_epoch_start: Optional[Callable[[int], None]] = None,
 ) -> Tuple[float, Dict[str, list]]:
     """
     Executa o treino e retorna (best_val_acc, history).
@@ -50,8 +49,6 @@ def train_loop(
       permite gravar os pesos de um sub-módulo (ex.: só a fusão multimodal).
     - Com return_metrics=True, grava também confusion_matrix.npy por época
       vencedora em `experiments_dir`.
-    - on_epoch_start (opcional): hook chamado com o índice da época antes do
-      treino (ex.: destravar o backbone do fine-tune em 2 estágios).
     - Ao final grava `experiments_dir/training_history.json` (inclui 'config').
     """
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -64,8 +61,6 @@ def train_loop(
     epochs_no_improve = 0
 
     for epoch in range(start_epoch, epochs + 1):
-        if on_epoch_start is not None:
-            on_epoch_start(epoch)
         train_loss, train_acc = run_epoch(
             model, train_loader, criterion, device,
             is_train=True, optimizer=optimizer, scaler=scaler,

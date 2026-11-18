@@ -76,7 +76,6 @@ DEFAULTS: Dict[str, Dict[str, Any]] = {
         "emotion_swap_prob": 0.0,
         "emotion_dropout_prob": 0.3,
         "pose_dropout_prob": 0.0,
-        "aux_video_weight": 0.3,
     },
 }
 

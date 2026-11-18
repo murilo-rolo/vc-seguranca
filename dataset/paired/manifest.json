@@ -1,11 +1,18 @@
 {
   "version": 1,
-  "generated_at": "2026-10-16T17:35:40.225206+00:00",
+  "generated_at": "2026-11-18T13:28:14.897422+00:00",
   "config": {
     "split": "original_partition",
     "val_test_ratio": 0.5,
-    "seed": 43,
+    "seed": 42,
     "reuse_faces": false,
+    "cross_label_train_ratio": 0.0,
+    "val_cells": [
+      "violent_violent_face",
+      "violent_non_violent_face",
+      "non_violent_non_violent_face",
+      "non_violent_violent_face"
+    ],
     "target": "video_label",
     "separator": "__"
   },
@@ -65,6 +72,8 @@
     },
     "val": {
       "violent_violent_face": 100,
+      "violent_non_violent_face": 100,
+      "non_violent_violent_face": 100,
       "non_violent_non_violent_face": 100
     },
     "test": {
@@ -75,9 +84,9 @@
     }
   },
   "files": {
-    "frames": 2200,
-    "pose": 2200,
-    "emotion": 2200
+    "frames": 2400,
+    "pose": 2400,
+    "emotion": 2400
   },
-  "n_pairs": 2200
+  "n_pairs": 2400
 }

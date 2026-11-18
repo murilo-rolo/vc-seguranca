@@ -177,7 +177,6 @@ def load_model(
         # ausentes em checkpoints antigos -> defaults 0 (sem chaves novas).
         emotion_dropout_prob = checkpoint.get("emotion_dropout_prob", 0.0)
         pose_dropout_prob = checkpoint.get("pose_dropout_prob", 0.0)
-        aux_video_weight = checkpoint.get("aux_video_weight", 0.0)
 
         model = create_multimodal_model(
             video_feature_dim=video_feature_dim,
@@ -188,7 +187,6 @@ def load_model(
             use_temporal_modeling=use_temporal,
             emotion_dropout_prob=emotion_dropout_prob,
             pose_dropout_prob=pose_dropout_prob,
-            aux_video_weight=aux_video_weight,
             device=device,
         )
         if "model_state_dict" in checkpoint:

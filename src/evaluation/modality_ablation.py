@@ -275,7 +275,6 @@ def build_ablation_models(
         use_temporal_modeling=dims["use_temporal_modeling"],
         emotion_dropout_prob=checkpoint.get("emotion_dropout_prob", 0.0),
         pose_dropout_prob=checkpoint.get("pose_dropout_prob", 0.0),
-        aux_video_weight=checkpoint.get("aux_video_weight", 0.0),
         device=device,
     )
     multimodal.load_state_dict(state_dict)
