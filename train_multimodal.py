@@ -4,15 +4,12 @@ Script de treinamento para modelo multimodal de detecção de risco.
 Hiperparâmetros: configs/treino.toml (seção [multimodal]).
 
 Mitigação do atalho facial (cross-label):
-- emotion_swap_prob: troca a face pela de label oposto (só train)
+- pares incongruentes materializados no dataset pareado
+  (--cross-label-train-ratio) e val com 4 células; seleção por val_acc
+- emotion_swap_prob: swap estocástico (0 por padrão, pares explícitos bastam)
 - emotion_dropout_prob/pose_dropout_prob: modal dropout (tokens learnable)
 - aux_video_weight: loss auxiliar sobre o token de vídeo pré-atenção
 - normalize_features: normaliza emotion/pose com stats do train
-- monitor: val com emotion-swap forçado; best checkpoint e early stopping
-  usam (val_acc + val_acc_swap)/2, selecionando invariância à face
-- calibração: limiar de decisão (recall máximo sujeito a spec ≥ 0.73 em
-  val+val_swap; fallback maximin) gravado no checkpoint como
-  'decision_threshold' e aplicado na avaliação
 - finetune_backbone (Fase F): fine-tune do CNN3D junto com a fusão
   (backbone_lr 10× menor); pesos do backbone salvos no best_model.pth
   como 'video_model_state_dict' e recarregados na avaliação
@@ -23,6 +20,7 @@ Uso:
 """
 
 import argparse
+import json
 import random
 
 import numpy as np
@@ -37,8 +35,6 @@ from src.datasets.feature_stats import (
     save_feature_stats,
 )
 from src.datasets.multimodal_dataset import get_multimodal_dataloaders
-from src.evaluation.inference import collect_predictions
-from src.evaluation.threshold import calibrate_threshold
 from src.models.cnn3d_risk import create_cnn3d_model, ensure_channels_first
 from src.models.multimodal_risk import create_multimodal_model
 from src.training.config import add_config_args, resolve_config
@@ -165,6 +161,20 @@ def _resolve_feature_stats(cfg) -> dict | None:
     return stats
 
 
+def _read_paired_metadata() -> dict:
+    """Lê do manifest a config do dataset pareado para rastrear no checkpoint."""
+    manifest_path = p.PAIRED_ROOT / "manifest.json"
+    if not manifest_path.exists():
+        return {}
+    with open(manifest_path) as f:
+        manifest = json.load(f)
+    config = manifest.get("config", {})
+    return {
+        "cross_label_train_ratio": config.get("cross_label_train_ratio", 0.0),
+        "val_cells": config.get("val_cells", []),
+    }
+
+
 def _infer_pose_feature_dim(dataset) -> int:
     """Dimensão flatten da pose (joints*3); fallback = default do dataset (zeros)."""
     import numpy as np
@@ -175,61 +185,6 @@ def _infer_pose_feature_dim(dataset) -> int:
             return int(np.load(path, mmap_mode="r").shape[1]) * 3
     # Sem pose.npy o dataset usa zeros (DEFAULT_POSE_JOINTS, 3).
     return DEFAULT_POSE_JOINTS * 3
-
-
-def _calibrate_decision_threshold(
-    multimodal_model: torch.nn.Module,
-    train_model: torch.nn.Module,
-    loaders: list,
-    device,
-    output_dir,
-) -> float:
-    """
-    Calibra o limiar de decisão no fim do treino e grava no best_model.pth.
-
-    Sweep sobre (val [+ val_swap]) combinados: val_swap simula a condição
-    cross-label (face trocada), ancorando o limiar nas células do teste.
-    Critério (D4b): recall máximo sujeito a spec ≥ 0.73 (margem sobre a
-    meta 0.70 p/ o shift val→teste); fallback maximin.
-    """
-    best_path = output_dir / "best_model.pth"
-    best_ckpt = torch.load(best_path, map_location="cpu")
-    multimodal_model.load_state_dict(best_ckpt["model_state_dict"])
-    # Com fine-tune (Fase F), o backbone salvo no melhor checkpoint difere
-    # dos pesos finais em memória — recarrega p/ calibrar com o modelo real.
-    video_model = getattr(train_model, "video_model", None)
-    if video_model is None:
-        video_model = getattr(getattr(train_model, "model", None), "video_model", None)
-    if video_model is not None and "video_model_state_dict" in best_ckpt:
-        video_model.load_state_dict(best_ckpt["video_model_state_dict"])
-        print("✓ Backbone CNN3D do melhor checkpoint recarregado p/ calibração")
-
-    ys, ps = [], []
-    for loader in loaders:
-        y_true, _, y_proba = collect_predictions(
-            train_model, loader, device, keep_full_probs=False,
-        )
-        ys.append(y_true)
-        ps.append(y_proba)
-    y_true = np.concatenate(ys)
-    y_proba = np.concatenate(ps)
-
-    result = calibrate_threshold(y_true, y_proba)
-    t = result["threshold"]
-
-    print("━━━ Calibração do limiar de decisão ━━━")
-    print(f"  critério={result['criterion']} (spec_target={result['spec_target']:.2f})")
-    print(f"  n={len(y_true)} | t={t:.4f}", end="")
-    if result["recall"] is not None:
-        print(f" | recall={result['recall']:.4f} | spec={result['spec']:.4f} "
-              f"| acc={result['accuracy']:.4f}")
-    else:
-        print(" (val single-class — fallback 0.5)")
-
-    best_ckpt["decision_threshold"] = t
-    torch.save(best_ckpt, best_path)
-    print(f"✓ decision_threshold={t:.4f} gravado em {best_path}")
-    return t
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -292,15 +247,17 @@ def main():
 
     feature_stats = None
     pose_feature_dim = 51
-    monitor_loader = None
+    paired_metadata = {}
     print("Criando DataLoaders...")
     from src.datasets.paired_dataset import (
-        PairedSurveillanceDataset,
         get_paired_dataloaders,
         paired_root_exists,
     )
     if paired_root_exists():
         print(f"✓ Dataset pareado: {p.PAIRED_ROOT}")
+        paired_metadata = _read_paired_metadata()
+        print(f"✓ Cross-label no train: {paired_metadata['cross_label_train_ratio']:.2f} "
+              f"| val cells: {paired_metadata['val_cells']}")
         feature_stats = _resolve_feature_stats(cfg)
         train_loader, val_loader, _ = get_paired_dataloaders(
             batch_size=cfg["batch_size"],
@@ -314,31 +271,6 @@ def main():
         )
         pose_feature_dim = _infer_pose_feature_dim(train_loader.dataset)
         print(f"✓ Pose feature dim inferida: {pose_feature_dim}")
-
-        # Monitor: val com emotion-swap forçado (invariância à face).
-        # best checkpoint + early stopping passam a usar
-        # monitor_score = (val_acc + val_acc_swap)/2 no train_loop.
-        if emotion_swap_prob > 0:
-            from torch.utils.data import DataLoader
-
-            val_swap_dataset = PairedSurveillanceDataset(
-                split="val",
-                num_frames=cfg["num_frames"],
-                window_size=cfg["window_size"],
-                video_mode="frames",
-                pose_mode="flatten",
-                feature_stats=feature_stats,
-                force_emotion_swap=True,
-            )
-            monitor_loader = DataLoader(
-                val_swap_dataset,
-                batch_size=cfg["batch_size"],
-                shuffle=False,
-                num_workers=cfg["num_workers"],
-                pin_memory=torch.cuda.is_available(),
-            )
-            print(f"✓ Monitor val trocado: {len(val_swap_dataset)} amostras "
-                  f"(swap prob={val_swap_dataset.emotion_swap_prob:.1f})")
     else:
         print("⚠️  dataset/paired não encontrado — usando CSV legado "
               "(gerar com: python -m src.preprocessing.build_paired_dataset)")
@@ -357,8 +289,6 @@ def main():
         )
 
     print("Criando modelo multimodal...")
-    print(f"Monitor de seleção: "
-          f"{'val + val-swapped (swap forçado)' if monitor_loader is not None else 'val apenas'}")
     multimodal_model = create_multimodal_model(
         video_feature_dim=video_model.feature_dim,
         pose_feature_dim=pose_feature_dim,
@@ -421,11 +351,11 @@ def main():
         model_hook=_multimodal_hook, config=cfg,
         early_stop_patience=cfg.get("early_stop_patience"),
         checkpoint_model=multimodal_model,
-        monitor_loader=monitor_loader,
         on_epoch_start=_on_epoch_start,
         checkpoint_extra={
             "fusion_method": "cross_attention",
             "use_temporal_modeling": cfg["use_temporal_modeling"],
+            "paired_dataset": paired_metadata,
             "emotion_feature_dim": multimodal_model.emotion_feature_dim,
             "video_feature_dim": multimodal_model.video_feature_dim,
             "video_backbone": "cnn3d",
@@ -442,23 +372,9 @@ def main():
         },
     )
 
-    # Calibração do limiar de decisão (Fase E): sweep em val [+ val_swap]
-    # com o melhor checkpoint; gravado como 'decision_threshold' e aplicado
-    # automaticamente pelos scripts de avaliação.
-    calibration_loaders = [val_loader]
-    if monitor_loader is not None:
-        calibration_loaders.append(monitor_loader)
-    _calibrate_decision_threshold(
-        multimodal_model, train_model, calibration_loaders,
-        torch.device(cfg["device"]), output_dir,
-    )
-
     print("=" * 60)
     print("Treinamento concluído!")
-    if monitor_loader is not None:
-        print(f"Melhor monitor_score (val + val-swapped)/2: {best_val_acc:.2f}%")
-    else:
-        print(f"Melhor Val Acc: {best_val_acc:.2f}%")
+    print(f"Melhor Val Acc: {best_val_acc:.2f}%")
     print(f"Modelo salvo em: {output_dir / 'best_model.pth'}")
     print("=" * 60)
 

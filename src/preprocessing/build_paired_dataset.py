@@ -15,8 +15,10 @@ Regras:
       val/test ← partição original "val" (e "test", se existir) dividida
       50/50 por classe com seed — mesmo protocolo do pipeline CSV
       (val_test_split_ratio=0.5, seed=42), que resultava em ~86% de acurácia.
-  - train/val contêm apenas pares CONGRUENTES (vídeo e face mesmo rótulo).
-  - test contém 4 células de mesmo tamanho (reuso controlado de vídeo):
+  - train contém pares congruentes + uma fração controlada de pares
+    incongruentes (--cross-label-train-ratio), para expor o modelo ao
+    conflito face×vídeo durante o treino em vez de corrigir a decisão depois.
+  - val/test contêm 4 células de mesmo tamanho (reuso controlado de vídeo):
         violent_violent_face, violent_non_violent_face,
         non_violent_non_violent_face, non_violent_violent_face
     Cada vídeo de teste aparece em 2 células (face congruente e incongruente).
@@ -30,6 +32,7 @@ Uso:
     python -m src.preprocessing.build_paired_dataset --seed 42
     python -m src.preprocessing.build_paired_dataset --validate
     python -m src.preprocessing.build_paired_dataset --force --reuse_faces
+    python -m src.preprocessing.build_paired_dataset --force --cross-label-train-ratio 0.25
 """
 
 import argparse
@@ -175,23 +178,56 @@ def _pair_train_val(
     seed: int,
     reuse_faces: bool,
     split: str,
+    cross_label_ratio: float = 0.0,
 ) -> List[Dict]:
-    """Pares congruentes: por classe, min(vídeos, faces) (ou ciclagem de faces)."""
-    pairs = []
+    """
+    Pares congruentes por classe + `cross_label_ratio` de pares incongruentes.
+
+    As faces incongruentes vêm do pool do label oposto, em offsets disjuntos
+    das faces congruentes (ou ciclados com --reuse_faces).
+    """
+    if not 0.0 <= cross_label_ratio <= 1.0:
+        raise ValueError("cross_label_ratio deve estar em [0, 1]")
+
+    v_pools = {cls: [v for v in videos if v["class"] == cls] for cls in CLASSES}
+    f_pools = {cls: [f for f in faces if f["class"] == cls] for cls in CLASSES}
     for cls in CLASSES:
-        v_pool = [v for v in videos if v["class"] == cls]
-        f_pool = [f for f in faces if f["class"] == cls]
         rng = random.Random(f"{seed}:pair:{split}:{cls}")
-        rng.shuffle(v_pool)
-        rng.shuffle(f_pool)
+        rng.shuffle(v_pools[cls])
+        rng.shuffle(f_pools[cls])
+
+    pairs = []
+    n_congruent = {}
+    for cls in CLASSES:
+        v_pool, f_pool = v_pools[cls], f_pools[cls]
         if not v_pool or not f_pool:
             continue
-        if reuse_faces and len(v_pool) > len(f_pool):
-            n = len(v_pool)
-        else:
-            n = min(len(v_pool), len(f_pool))
+        n = len(v_pool) if reuse_faces and len(v_pool) > len(f_pool) else min(
+            len(v_pool), len(f_pool)
+        )
+        n_congruent[cls] = n
         for i in range(n):
             pairs.append((v_pool[i], f_pool[i % len(f_pool)]))
+
+    if cross_label_ratio <= 0:
+        return pairs
+
+    other = {"violent": "non_violent", "non_violent": "violent"}
+    for cls in CLASSES:
+        n_target = round(cross_label_ratio * n_congruent.get(cls, 0))
+        if n_target <= 0:
+            continue
+        f_pool = f_pools[other[cls]]
+        if not f_pool:
+            continue
+        v_pool = v_pools[cls]
+        rng = random.Random(f"{seed}:cross:{split}:{cls}")
+        chosen = list(v_pool)
+        rng.shuffle(chosen)
+        offset = n_congruent.get(other[cls], 0)
+        for i in range(n_target):
+            face = f_pool[(offset + i) % len(f_pool)]
+            pairs.append((chosen[i % len(chosen)], face))
     return pairs
 
 
@@ -200,18 +236,19 @@ def _pair_test(
     faces: List[Dict],
     seed: int,
     reuse_faces: bool,
+    split: str = "test",
 ) -> List[Dict]:
     """
     4 células de mesmo tamanho com reuso controlado de vídeo.
 
-    Cada vídeo de teste aparece em exatamente 2 células (face congruente e
+    Cada vídeo aparece em exatamente 2 células (face congruente e
     incongruente). Faces são disjuntas entre células por padrão.
     """
     v_pools = {cls: [v for v in videos if v["class"] == cls] for cls in CLASSES}
     f_pools = {cls: [f for f in faces if f["class"] == cls] for cls in CLASSES}
     for cls in CLASSES:
-        random.Random(f"{seed}:test:{cls}:v").shuffle(v_pools[cls])
-        random.Random(f"{seed}:test:{cls}:f").shuffle(f_pools[cls])
+        random.Random(f"{seed}:{split}:{cls}:v").shuffle(v_pools[cls])
+        random.Random(f"{seed}:{split}:{cls}:f").shuffle(f_pools[cls])
 
     if any(not v_pools[c] for c in CLASSES) or any(not f_pools[c] for c in CLASSES):
         return []
@@ -274,6 +311,7 @@ def build(
     reuse_faces: bool = False,
     output_root: Optional[Path] = None,
     force: bool = False,
+    cross_label_train_ratio: float = 0.0,
 ) -> Dict:
     output_root = Path(output_root) if output_root else p.PAIRED_ROOT
 
@@ -304,11 +342,16 @@ def build(
     counts: Dict[str, Counter] = {s: Counter() for s in ("train", "val", "test")}
     file_counts = Counter()
 
-    for split in ("train", "val"):
-        pairs = _pair_train_val(
-            video_splits[split], face_splits[split], seed, reuse_faces, split
-        )
-        for video, face in pairs:
+    train_pairs = _pair_train_val(
+        video_splits["train"], face_splits["train"], seed, reuse_faces,
+        "train", cross_label_ratio=cross_label_train_ratio,
+    )
+    val_pairs = _pair_test(
+        video_splits["val"], face_splits["val"], seed, reuse_faces, split="val"
+    )
+    for split, pairs in (("train", train_pairs), ("val", val_pairs)):
+        for item in pairs:
+            video, face = (item["video"], item["face"]) if isinstance(item, dict) else item
             cell = cell_for(video["class"], face["class"])
             pair_id = _pair_id(video, face)
             pair_dir = output_root / split / cell / pair_id
@@ -345,6 +388,8 @@ def build(
             "val_test_ratio": VAL_TEST_RATIO,
             "seed": seed,
             "reuse_faces": reuse_faces,
+            "cross_label_train_ratio": cross_label_train_ratio,
+            "val_cells": list(TEST_CELLS),
             "target": "video_label",
             "separator": SEPARATOR,
         },
@@ -379,6 +424,7 @@ def build(
     print("=" * 60)
     print(f"Raiz: {output_root}")
     print(f"Split: partição original (train → train; val/test ← val 50/50)")
+    print(f"Train cross-label ratio: {cross_label_train_ratio}")
     print(f"Inventário: {len(videos)} vídeos, {len(faces)} faces")
     for split in ("train", "val", "test"):
         total_split = sum(counts[split].values())
@@ -432,6 +478,8 @@ def main():
                         help="Seed para splits e pareamento (padrão: 42)")
     parser.add_argument("--reuse_faces", action="store_true",
                         help="Permite ciclar faces quando há menos faces que vídeos")
+    parser.add_argument("--cross-label-train-ratio", type=float, default=0.0,
+                        help="Fração de pares incongruentes no train (0.0-1.0)")
     parser.add_argument("--output", type=str, default=None,
                         help="Raiz de saída (padrão: dataset/paired)")
     parser.add_argument("--force", action="store_true",
@@ -454,6 +502,7 @@ def main():
         reuse_faces=args.reuse_faces,
         output_root=output_root,
         force=args.force,
+        cross_label_train_ratio=args.cross_label_train_ratio,
     )
     n_ok, errors = validate(output_root)
     print(f"Validação: {n_ok} symlinks resolvendo, {len(errors)} erros")

@@ -404,12 +404,14 @@ python -m src.preprocessing.build_paired_dataset --seed 42
 # reconstruir / validar symlinks
 python -m src.preprocessing.build_paired_dataset --force
 python -m src.preprocessing.build_paired_dataset --validate
+# expõe cross-label durante o treino (substitui monitor/threshold)
+python -m src.preprocessing.build_paired_dataset --force --cross-label-train-ratio 0.25
 ```
 
 **Regras:**
 - Splits seguem a **partição original** dos dados (mesmo protocolo do CSV, que resultava em ~86% de acurácia): `train` ← partição `train` original (RWF-2000 e `balanced-affectnet`); `val`/`test` ← partição original `val` (e `test`, se existir) dividida 50/50 por classe com seed. A partição `train` nunca aparece em `val`/`test`.
-- `train`/`val` contêm apenas pares **congruentes** (vídeo e face do mesmo rótulo).
-- `test` contém **4 células de mesmo tamanho** com reuso controlado de vídeo (cada vídeo de teste aparece com face congruente e incongruente): `violent_violent_face`, `violent_non_violent_face`, `non_violent_non_violent_face`, `non_violent_violent_face`.
+- `train` contém pares **congruentes** (vídeo e face do mesmo rótulo) mais uma fração configurável de pares **incongruentes**, controlada por `--cross-label-train-ratio` (padrão `0.0`); a fração e as contagens ficam no `manifest.json`.
+- `val`/`test` contêm **4 células de mesmo tamanho** com reuso controlado de vídeo (cada vídeo aparece com face congruente e incongruente): `violent_violent_face`, `violent_non_violent_face`, `non_violent_non_violent_face`, `non_violent_violent_face`. O best checkpoint é selecionado por `val_acc` simples sobre esse val misto, e a inferência usa `argmax` (sem limiar calibrado).
 - **Target = rótulo do vídeo**; o rótulo da face é covariável (guardado nos metadados do par).
 
 **Estrutura gerada:**
