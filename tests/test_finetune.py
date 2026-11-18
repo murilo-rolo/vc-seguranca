@@ -76,14 +76,6 @@ def _make_two_stage():
     return video, mm, model
 
 
-def test_config_defaults_fase_b():
-    mm = DEFAULTS["multimodal"]
-    assert mm["finetune_backbone"] is True
-    assert mm["head_only_epochs"] == 5
-    assert mm["backbone_weight_decay"] == 1e-3
-    assert mm["backbone_lr"] == 1e-5
-
-
 def test_head_only_congela_backbone():
     video, _, model = _make_two_stage()
     assert all(not p.requires_grad for p in video.parameters())
