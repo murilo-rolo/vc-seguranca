@@ -178,6 +178,16 @@ class MultimodalRiskDetector(nn.Module):
     ) -> torch.Tensor:
         batch_size = video_features.shape[0]
 
+        if (
+            video_features.dim() not in (2, 3)
+            or video_features.shape[-1] != self.video_feature_dim
+        ):
+            raise ValueError(
+                f"video_features deve ser um clip token (B, {self.video_feature_dim}) "
+                f"ou uma sequência legada (B, T, {self.video_feature_dim}); "
+                f"recebido {tuple(video_features.shape)}"
+            )
+
         if video_features.dim() == 3:  # legado (B, T, D_v) -> mean-pool
             video_features = video_features.mean(dim=1)
 

@@ -109,6 +109,16 @@ def test_multimodal_forward_legacy_video_sequence():
     assert model(video, pose, emotion).shape == (2, 2)
 
 
+def test_multimodal_rejeita_frames_brutos():
+    model = MultimodalRiskDetector()
+    with pytest.raises(ValueError, match="clip token"):
+        model(
+            torch.randn(2, 4, 3, 8, 8),
+            torch.randn(2, 4, 51),
+            torch.randn(2, 4, 128),
+        )
+
+
 def test_multimodal_forward_without_temporal():
     model = MultimodalRiskDetector(use_temporal_modeling=False)
     assert model(*_multimodal_inputs()).shape == (2, 2)

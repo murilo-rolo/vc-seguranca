@@ -37,6 +37,28 @@ from src.training.config import add_config_args, resolve_config
 from src.training.loop import train_loop
 
 
+class FrozenVideoFeatureExtractor(nn.Module):
+    """Extrai o clip token com o CNN3D congelado antes do forward multimodal."""
+
+    def __init__(self, multimodal_model, video_model):
+        super().__init__()
+        self.multimodal = multimodal_model
+        self.video_model = video_model
+        for param in self.video_model.parameters():
+            param.requires_grad_(False)
+
+    def train(self, mode: bool = True):
+        super().train(mode)
+        self.video_model.eval()
+        return self
+
+    def forward(self, video, pose, emotion):
+        with torch.no_grad():
+            if video.dim() == 5:
+                video = self.video_model.get_features(ensure_channels_first(video))
+        return self.multimodal(video, pose, emotion)
+
+
 def _multimodal_hook(batch):
     return (batch[0], batch[1], batch[2]), batch[3]
 
@@ -171,7 +193,7 @@ def main():
         device=cfg["device"],
     )
 
-    train_model = multimodal_model
+    train_model = FrozenVideoFeatureExtractor(multimodal_model, video_model)
     criterion = nn.CrossEntropyLoss(
         label_smoothing=cfg.get("label_smoothing", 0.0)
     )
