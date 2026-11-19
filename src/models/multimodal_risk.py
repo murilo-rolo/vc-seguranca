@@ -54,6 +54,8 @@ class MultimodalRiskDetector(nn.Module):
         video_feature_dim: int = 512,
         pose_feature_dim: int = 51,
         emotion_feature_dim: int = 128,
+        num_frames: int = 16,
+        video_hidden_dim: int = 128,
         pose_hidden_dim: int = 64,
         emotion_hidden_dim: int = 32,
         fusion_dim: int = 256,
@@ -70,6 +72,7 @@ class MultimodalRiskDetector(nn.Module):
         self.video_feature_dim = video_feature_dim
         self.pose_feature_dim = pose_feature_dim
         self.emotion_feature_dim = emotion_feature_dim
+        self.num_frames = num_frames
         self.fusion_method = fusion_method
         self.use_temporal_modeling = use_temporal_modeling
         self.emotion_dropout_prob = float(emotion_dropout_prob)
@@ -229,6 +232,7 @@ def create_multimodal_model(
     video_feature_dim: int = 512,
     pose_feature_dim: int = 51,
     emotion_feature_dim: int = 128,
+    num_frames: int = 16,
     fusion_method: Literal["cross_attention"] = "cross_attention",
     use_temporal_modeling: bool = True,
     device: str = "cuda" if torch.cuda.is_available() else "cpu",
@@ -239,6 +243,7 @@ def create_multimodal_model(
         video_feature_dim=video_feature_dim,
         pose_feature_dim=pose_feature_dim,
         emotion_feature_dim=emotion_feature_dim,
+        num_frames=num_frames,
         fusion_method=fusion_method,
         use_temporal_modeling=use_temporal_modeling,
         **kwargs,

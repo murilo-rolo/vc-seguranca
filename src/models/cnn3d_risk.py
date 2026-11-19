@@ -73,6 +73,7 @@ class CNN3DRiskDetector(nn.Module):
         self.model_name = model_name
         self.num_classes = num_classes
         self.pretrained = pretrained
+        self.num_frames = 16
 
         backbone = _create_backbone(model_name, pretrained)
         self.backbone, self.feature_dim = _strip_classifier(backbone)
@@ -107,6 +108,7 @@ def create_cnn3d_model(
     dropout: float = 0.3,
     freeze_backbone: bool = False,
     checkpoint_path: Optional[str] = None,
+    num_frames: int = 16,
     device: str = "cuda" if torch.cuda.is_available() else "cpu",
 ) -> CNN3DRiskDetector:
     """Cria o modelo CNN 3D (sem pesos Kinetics quando há checkpoint customizado)."""
@@ -117,6 +119,7 @@ def create_cnn3d_model(
         dropout=dropout,
         freeze_backbone=freeze_backbone,
     )
+    model.num_frames = num_frames
 
     if checkpoint_path is not None:
         from .checkpoints import load_state

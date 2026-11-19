@@ -57,6 +57,7 @@ def main():
         pretrained=True,
         dropout=cfg["dropout"],
         freeze_backbone=cfg["freeze_backbone"],
+        num_frames=cfg["num_frames"],
         device=cfg["device"],
     )
     print(f"✓ Modelo criado: {cfg['model_name']}")
