@@ -67,12 +67,6 @@ class MultimodalRiskDetector(nn.Module):
         emotion_dropout_prob: float = 0.0,
         pose_dropout_prob: float = 0.0,
     ):
-        if fusion_method != "cross_attention":
-            raise ValueError(
-                f"Método de fusão não suportado: {fusion_method}. "
-                f"Suportado apenas: 'cross_attention'"
-            )
-
         super().__init__()
 
         self.video_feature_dim = video_feature_dim
