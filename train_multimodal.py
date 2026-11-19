@@ -133,7 +133,6 @@ def main():
     video_model = create_cnn3d_model(
         num_classes=2,
         checkpoint_path=cfg["video_model_path"],
-        num_frames=cfg["num_frames"],
         device=cfg["device"],
     )
     video_model.eval()
@@ -185,7 +184,6 @@ def main():
         video_feature_dim=video_model.feature_dim,
         pose_feature_dim=pose_feature_dim,
         emotion_feature_dim=128,
-        num_frames=cfg["window_size"],
         fusion_method="cross_attention",
         use_temporal_modeling=cfg["use_temporal_modeling"],
         emotion_dropout_prob=emotion_dropout_prob,
